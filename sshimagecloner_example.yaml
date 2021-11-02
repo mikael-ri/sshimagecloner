@@ -1,0 +1,60 @@
+###############################################################################
+##                            ssh image cloner                               ##
+##                                                                           ##
+## NB! All folders must end with a trailing slash!                           ##
+##                                                                           ##
+## NB! Please make sure that the intendation stays correct and not tampered  ##
+## with, and that it complies with yaml-specifications                       ##
+###############################################################################
+
+# General settings for the program
+general:
+  
+  # Log file. If commented out, then no log is written.
+  log_file: /var/log/sshimagecloner
+  
+  # How much log is written
+  # 0 = absolute minimum, 1 = normal info, 2 = debug
+  log_level: 1
+  
+  # Root folder where the backups are stored.
+  # All paths should be in relation to this.
+  # NB! This folder must exist
+  backup_root_folder: /backups/
+  
+  # How the "version" -folders are named, pick anything that makes sense
+  # to you, e.g. daily, weekly, monthly etc. Folders are then named as 
+  # e.g. "daily.0", "daily.1" etc. 0 being the most recent file.
+  # default: backupdir
+  folder_naming: weekly
+
+  # How many versions of images are kept
+  # default 2
+  versions: 26
+
+# backups to be run
+backups:
+  # A list of backups
+  # Each backup must have an unique name.
+
+  #Example configuration
+  # "Your name for the backup":
+  #   remote_login: "username to log in to the host"
+  #   remote_host: "ip or dns name for the host where to backup"
+  #   remote_file: "disk to clone, for RPi usually /dev/mmcblk0"
+  #   target_file: "filename of the backup image"
+  #   block_size: "block size for dd, if in doubt, use 64k"
+
+  RPi_1:
+    remote_login: backup_user
+    remote_host: 10.0.0.1
+    remote_file: /dev/mmcblk0
+    target_file: RPi_1.img.gz
+    block_size: 64k
+
+  RPi_2:
+    remote_login: backup_user
+    remote_host: 10.0.0.2
+    remote_file: /dev/mmcblk0
+    target_file: RPi_2.img.gz
+    block_size: 64k
