@@ -148,10 +148,14 @@ def main(args):
         print(e_msg)
         return
 
+    # If target_folder is given from command line, then replace it for all backups to be processed
+    if cmd_args.target_folder is not None:
+        backups_to_process = replace_target_folder(backups_to_process, cmd_args.target_folder)
+
     # Process through the selected backups
     for key in backups_to_process:
         # Check if the backup-specific folder exists, if not create
-        e_cnt, e_msg, path = prepare_path(conf.root_folder, backups_to_process[key].name)
+        e_cnt, e_msg, path = prepare_path(conf.root_folder, backups_to_process[key].target_folder)
         if  e_cnt > 0:
             my_log.write(e_msg, 'E')
             print(e_msg)
@@ -175,15 +179,15 @@ def main(args):
 def parse_cmd_arguments(arg):
     '''Parse command line arguments and return them as namedtuple'''
 
-    usage = 'Usage: sshimagecloner.py [-h | --help] [-v] ' \
-        '[-c | --conffile configfileame] [backupname_1] [backupname_2] [backupname...n]'
+    usage = 'Usage: sshimagecloner.py [-h | --help] [-v] ' '[-c | --conffile configfile] \n' \
+        + '[-f | --folder folder] [backupname_1] [backupname_2] [backupname...n]'
 
     err_count = 0
     msg = ''
 
     # Try to read the options and arguments from command line input
     try:
-        opts, args = getopt.getopt(arg, 'hc:v', ['help', 'conffile='])
+        opts, args = getopt.getopt(arg, 'hc:f:v', ['help', 'conffile=', 'folder='])
     except getopt.GetoptError:
         err_count += 1
         msg += '[ERROR] Could not parse command line options, possibly unrecognized option\n'
@@ -192,6 +196,7 @@ def parse_cmd_arguments(arg):
 
     # Process the options given.
     conf_file = None
+    target_folder = None
     verbose = False
     for opt, val in opts:
         if opt == '-v':
@@ -201,6 +206,8 @@ def parse_cmd_arguments(arg):
             msg += usage
         elif opt in ('-c', '--conffile'):
             conf_file = val
+        elif opt in ('-f', '--folder'):
+            target_folder = val
         else:
             print(opt + ' XX ' + val)
             err_count += 1
@@ -216,8 +223,8 @@ def parse_cmd_arguments(arg):
             cmd_backups[val] = val
 
     Arguments = collections.namedtuple('Arguments',
-    ['conf_file', 'verbose', 'configtest', 'cmd_backups'])
-    arguments = Arguments(conf_file, verbose, configtest, cmd_backups)
+    ['conf_file', 'target_folder', 'verbose', 'configtest', 'cmd_backups'])
+    arguments = Arguments(conf_file, target_folder, verbose, configtest, cmd_backups)
     return err_count, msg, arguments
 
     # End of def parse_cmd_arguments(arg)
@@ -313,7 +320,8 @@ def parse_config_file(path):
 
     all_backups = {}
     Backup = collections.namedtuple('Backup',
-    ['name', 'remote_login', 'remote_host', 'remote_file', 'target_file', 'block_size'])
+    ['name', 'remote_login', 'remote_host', 'remote_file',
+    'target_file', 'target_folder', 'block_size'])
 
     for key in backup_config:
         try:
@@ -347,7 +355,7 @@ def parse_config_file(path):
             err_count += 1
             msg += '[ERROR] block_size not specified for backup: ' + key + '\n'
 
-        all_backups[key] = Backup(key, r_l, r_h, r_f, t_f, b_s)
+        all_backups[key] = Backup(key, r_l, r_h, r_f, t_f, key, b_s)
 
 
     return err_count, msg, conf, all_backups
@@ -371,15 +379,25 @@ def select_for_processing(cmdback, allback):
     # Enf of def select_for_processing(cmdback, allback)
 
 
-def prepare_path(root_folder, backupname):
+def replace_target_folder(backups, folder):
+    '''Function to replace the target folder'''
+
+    for key in backups:
+        backups[key] = backups[key]._replace(target_folder = folder)
+
+    return backups
+    # End of def replace_target_folder(backups, folder)
+
+
+def prepare_path(root_path, folder):
     '''Function to return the full backup path, and create if it does not exist'''
     err_count = 0
     msg = ""
 
-    backup_folder = root_folder + backupname
+    backup_folder = root_path + folder
 
     if os.path.isdir(backup_folder):
-        return err_count, msg, backup_folder + "/"
+        return err_count, msg, backup_folder
     else:
         if os.path.exists(backup_folder):
             err_count += 1
@@ -387,14 +405,13 @@ def prepare_path(root_folder, backupname):
             return err_count, msg, ''
         else:
             try:
-                os.mkdir(backup_folder)
-                print('Folder created: ' + backup_folder)
+                os.makedirs(backup_folder)
             except PermissionError:
                 err_count += 1
                 msg += 'Cannot create folder: ' + backup_folder + ', no access rights'
                 return err_count, msg, ''
 
-    return err_count, msg, backup_folder + '/'
+    return err_count, msg, backup_folder
 
     # End of def prepare_path(backup)
 
@@ -407,50 +424,65 @@ def run_backup(backup, path, log):
 
     log.write('Starting to process ' + backup.name + ' : ' + backup.remote_file)
 
-    readcmd = 'ssh ' + backup.remote_login + '@' + backup.remote_host \
-        + ' "sudo dd if='+ backup.remote_file + ' bs=' + backup.block_size \
-        + '| gzip -1 -"'
+    # Construct the "reading" part of the dd + gzip command
+    readcmd = '/usr/bin/ssh ' + backup.remote_login + '@' + backup.remote_host \
+        + ' "usr/bin/sudo /usr/bin/dd if='+ backup.remote_file + ' bs=' + backup.block_size \
+        + ' | /usr/bin/gzip -1 -"'
 
     log.write(backup.name + ' read command:', 'D')
     log.write(readcmd, 'D')
 
+    # Create the target filename, full path. ._tmp -extension is used during the write
     timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S_')
+    target_file = path + '/' + timestamp + backup.target_file
+    target_file_tmp = path + '/' + timestamp + backup.target_file + '._tmp'
 
-    writecmd = 'dd of=' + path + timestamp + backup.target_file + ' bs=' + backup.block_size
+    # Construct the write part of overall dd-command.
+    writecmd = '/usr/bin/dd of=' + target_file_tmp + ' bs=' + backup.block_size
 
     log.write(backup.name + ' write command:', 'D')
     log.write(writecmd, 'D')
 
-    print(readcmd)
-    print(writecmd)
-
+    # Split the command line options / process commands for subprocess.Popen command
     readsplit = shlex.split(readcmd)
     writesplit = shlex.split(writecmd)
 
-    print(readsplit)
-    print(writesplit)
+    readproc = None
+    writeproc = None
 
-    readproc = subprocess.Popen(readsplit,
-    stdin=subprocess.PIPE,
-    stdout=subprocess.PIPE,
-    stderr=subprocess.PIPE)
+    try:
+        # Start the process providing the read stream
+        readproc = subprocess.Popen(readsplit,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE)
 
-    writeproc = subprocess.Popen(writesplit,
-    stdin=readproc.stdout,
-    stdout=subprocess.PIPE,
-    stderr=subprocess.PIPE)
+        # Pipe the read streams output to write streams input
+        writeproc = subprocess.Popen(writesplit,
+        stdin=readproc.stdout,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE)
 
-    writeproc.wait()
+        # Wait until the writing process finishes, and flush everything.
+        writeproc.wait()
+        writeproc.stdout.flush()
+    except OSError:
+        err_count += 1
+        msg += 'Something went wrong with the read and write processes'
+        return err_count, msg
+
+    # Rename the target file to standard name.
+    log.write('Renaming ' + target_file_tmp + ' to ' + target_file, 'D')
+    os.rename(target_file_tmp, target_file)
 
     linestoprint = readproc.stderr.readlines() + writeproc.stderr.readlines()
 
-    log.write(backup.name + ' : ' + backup.remote_file + ' successfully backed up')
+    log.write(backup.name + ' : ' + backup.remote_file + ' successfully')
+    log.write('backed up as ' + target_file)
     log.write('with following dd statistics', 'D')
     for line in linestoprint:
         log.write(line.decode('utf-8'), 'D')
 
-    # create_read_command_string(backup)
-    # create_write_command()
 
     return err_count, msg
 

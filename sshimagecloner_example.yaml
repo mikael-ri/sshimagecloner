@@ -1,7 +1,7 @@
 ###############################################################################
 ##                            ssh image cloner                               ##
 ##                                                                           ##
-## NB! All folders must end with a trailing slash!                           ##
+## NB! All folders must not have a trailing slash!                           ##
 ##                                                                           ##
 ## NB! Please make sure that the intendation stays correct and not tampered  ##
 ## with, and that it complies with yaml-specifications                       ##
@@ -20,7 +20,7 @@ general:
   # Root folder where the backups are stored.
   # All paths should be in relation to this.
   # NB! This folder must exist
-  backup_root_folder: /backups/
+  backup_root_folder: /backups
   
   # How the "version" -folders are named, pick anything that makes sense
   # to you, e.g. daily, weekly, monthly etc. Folders are then named as 
