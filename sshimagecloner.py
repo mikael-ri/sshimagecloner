@@ -16,8 +16,11 @@
 ###############################################################################
 import os
 import sys
+import datetime
 import getopt
 import collections
+import subprocess
+import shlex
 import yaml
 from yaml.scanner import ScannerError
 
@@ -30,9 +33,12 @@ import logger
 
 
 ###############################################################################
-## Custom definitions                                                        ##
+## My own custom classes                                                     ##
 ###############################################################################
 
+#------------------------------------------------------------------------------
+# Class for writing the logs, this handles the log levels etc.
+#------------------------------------------------------------------------------
 class LogWriter:
     '''A simple class to handle the verbosity and log writing'''
 
@@ -83,24 +89,30 @@ CONFIG_FILE_PATH = './sshimagecloner.yaml'
 def main(args):
     '''Main function to execute the code'''
 
-    # Parse the arguments, if any
-    err_count, err_msg, cmd_args = parse_cmd_arguments(args)
+    e_cnt = 0
+    e_msg = ""
 
-    if err_count > 0:
-        print(err_msg)
+    # Parse the arguments, if any
+    e_cnt, e_msg, cmd_args = parse_cmd_arguments(args)
+
+    # End execution if errors in parsing arguments
+    if e_cnt > 0:
+        print(e_msg)
         return
 
     # Read and parse the configuration file
-    if len(cmd_args.conf_file) > 0:
-        err_count, err_msg, conf, backups = parse_config_file(cmd_args.conf_file)
+    if cmd_args.conf_file is None:
+        e_cnt, e_msg, conf, all_backups = parse_config_file(CONFIG_FILE_PATH)
     else:
-        err_count, err_msg, conf, backups = parse_config_file(CONFIG_FILE_PATH)
+        e_cnt, e_msg, conf, all_backups = parse_config_file(cmd_args.conf_file)
 
-    if err_count > 0:
+    # End execution if errors in parsing config file
+    if e_cnt > 0:
         print('Errors in parsing the configuration file:\n')
-        print(err_msg)
+        print(e_msg)
         return
 
+    # If run as configtest, end process here
     if cmd_args.configtest:
         print('Config file content seems to be OK!')
         return
@@ -110,25 +122,53 @@ def main(args):
     my_log = LogWriter(log, conf.log_level, conf.is_log_written)
 
     my_log.write('All arguments and parameters parsed successfully, found ' \
-        + str(len(backups)) + ' backups')
+        + str(len(all_backups)) + ' backups')
 
     my_log.write('Command line arguments are:', 'D')
     my_log.write(str(cmd_args), 'D')
     my_log.write('Configuration parameters are:', 'D')
     my_log.write(str(conf), 'D')
     my_log.write('Backups and parameters are:', 'D')
-    my_log.write(str(backups), 'D')
+    my_log.write(str(all_backups), 'D')
 
 
     # Actual execution starts from here
     my_log.write('Start to execute backups', 'D')
 
-    # Implement this..
+    # Compare the command line arguments with config file backups
+    backups_to_process = {}
+    if len(cmd_args.cmd_backups) > 0:
+        e_cnt, e_msg, backups_to_process = select_for_processing(cmd_args.cmd_backups, all_backups)
+    else:
+        backups_to_process = all_backups
 
+    if e_cnt > 0:
+        my_log.write(e_msg, 'E')
+        print(e_msg)
+        return
 
+    # Process through the selected backups
+    for key in backups_to_process:
+        # Check if the backup-specific folder exists, if not create
+        e_cnt, e_msg, path = prepare_path(conf.root_folder, backups_to_process[key].name)
+        if  e_cnt > 0:
+            my_log.write(e_msg, 'E')
+            print(e_msg)
+            return
+        # Run the backup
+        e_cnt, e_msg = run_backup(backups_to_process[key], path, my_log)
+        if e_cnt > 0:
+            my_log.write(e_msg, 'E')
+            print(e_msg)
+            return
 
     # End of def main(args)
 
+
+
+#------------------------------------------------------------------------------
+# Methof to parse the command line arguments passed
+#------------------------------------------------------------------------------
 
 # Parse command line arguments
 def parse_cmd_arguments(arg):
@@ -139,6 +179,8 @@ def parse_cmd_arguments(arg):
 
     err_count = 0
     msg = ''
+
+    # Try to read the options and arguments from command line input
     try:
         opts, args = getopt.getopt(arg, 'hc:v', ['help', 'conffile='])
     except getopt.GetoptError:
@@ -147,10 +189,7 @@ def parse_cmd_arguments(arg):
         msg += usage
         return err_count, msg, None
 
-    #print(opts)
-    #print('perse')
-    #print(args)
-
+    # Process the options given.
     conf_file = None
     verbose = False
     for opt, val in opts:
@@ -166,6 +205,7 @@ def parse_cmd_arguments(arg):
             err_count += 1
             msg += 'Unrecognized option'
 
+    # Process the arguments given.
     configtest = False
     cmd_backups = {}
     for val in args:
@@ -181,6 +221,10 @@ def parse_cmd_arguments(arg):
 
     # End of def parse_cmd_arguments(arg)
 
+
+#------------------------------------------------------------------------------
+# Method to parse the configuration file
+#------------------------------------------------------------------------------
 
 # Parse the configuration file to namedtuples
 def parse_config_file(path):
@@ -266,9 +310,9 @@ def parse_config_file(path):
         err_count += 1
         msg += '[ERROR] No backups specified in config file\n'
 
-    backups = {}
+    all_backups = {}
     Backup = collections.namedtuple('Backup',
-    ['remote_login', 'remote_host', 'remote_file', 'target_file', 'block_size'])
+    ['name', 'remote_login', 'remote_host', 'remote_file', 'target_file', 'block_size'])
 
     for key in backup_config:
         try:
@@ -302,11 +346,114 @@ def parse_config_file(path):
             err_count += 1
             msg += '[ERROR] block_size not specified for backup: ' + key + '\n'
 
-            backups[key] = Backup(r_l, r_h, r_f, t_f, b_s)
+        all_backups[key] = Backup(key, r_l, r_h, r_f, t_f, b_s)
 
 
-    return err_count, msg, conf, backups
+    return err_count, msg, conf, all_backups
     # End of def parse_config_file(path)
+
+
+# Method to select backups to be processed
+def select_for_processing(cmdback, allback):
+    '''Function to select the backups to be processed based on cmdline arguments.'''
+    err_count = 0
+    msg = ""
+    backups_to_process = {}
+    for key in cmdback:
+        if key in allback.keys():
+            backups_to_process[key] = allback[key]
+        else:
+            err_count += 1
+            msg += 'Backup: ' + key + ' not found from config file, aborting\n'
+
+    return err_count, msg, backups_to_process
+    # Enf of def select_for_processing(cmdback, allback)
+
+
+def prepare_path(root_folder, backupname):
+    '''Function to return the full backup path, and create if it does not exist'''
+    err_count = 0
+    msg = ""
+
+    backup_folder = root_folder + backupname
+
+    if os.path.isdir(backup_folder):
+        return err_count, msg, backup_folder + "/"
+    else:
+        if os.path.exists(backup_folder):
+            err_count += 1
+            msg += 'Backup path ' + backup_folder + ' already exists, but is not a directory'
+            return err_count, msg, ''
+        else:
+            try:
+                #os.mkdir(backup_folder)
+                print('Create folder here!!')
+            except PermissionError:
+                err_count += 1
+                msg += 'Cannot create folder: ' + backup_folder + ', no access rights'
+                return err_count, msg, ''
+
+    return err_count, msg, backup_folder + '/'
+
+    # End of def prepare_path(backup)
+
+
+# Method to run one backup
+def run_backup(backup, path, log):
+    '''Function to process one backup.'''
+    err_count = 0
+    msg = ""
+
+    log.write('Starting to process ' + backup.name + ' : ' + backup.remote_file)
+
+    readcmd = 'ssh ' + backup.remote_login + '@' + backup.remote_host \
+        + ' "sudo dd if='+ backup.remote_file + ' bs=' + backup.block_size \
+        + '| gzip -1 -"'
+
+    log.write(backup.name + ' read command:', 'D')
+    log.write(readcmd, 'D')
+
+    timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S_')
+
+    writecmd = 'dd of=' + path + timestamp + backup.target_file + ' bs=' + backup.block_size
+
+    log.write(backup.name + ' write command:', 'D')
+    log.write(writecmd, 'D')
+
+    print(readcmd)
+    print(writecmd)
+
+    readsplit = shlex.split(readcmd)
+    writesplit = shlex.split(writecmd)
+
+    print(readsplit)
+    print(writesplit)
+
+    readproc = subprocess.Popen(readsplit,
+    stdin=subprocess.PIPE,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.PIPE)
+
+    writeproc = subprocess.Popen(writesplit,
+    stdin=readproc.stdout,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.PIPE)
+
+    writeproc.wait()
+
+    log.write(backup.name + ' : ' + backup.remote_file + ' successfully backed up')
+    log.write('with following dd statistics', 'D')
+    log.write(readproc.stderr.readlines(), 'D')
+    log.write(writeproc.stderr.readlines(), 'D')
+
+    # create_read_command_string(backup)
+    # create_write_command()
+
+    return err_count, msg
+
+    # End of def run_backup(backup):
+
+
 
 # Run the main function
 if __name__ == "__main__":
