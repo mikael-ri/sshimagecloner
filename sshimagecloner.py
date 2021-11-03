@@ -477,8 +477,9 @@ def run_backup(backup, path, log):
 
     linestoprint = readproc.stderr.readlines() + writeproc.stderr.readlines()
 
-    log.write(backup.name + ' : ' + backup.remote_file + ' successfully')
-    log.write('backed up as ' + target_file)
+    log.write(backup.name + ' : ' + backup.remote_file + ' successfully' \
+        + 'backed up as ' + target_file)
+        
     log.write('with following dd statistics', 'D')
     for line in linestoprint:
         log.write(line.decode('utf-8'), 'D')

@@ -8,9 +8,9 @@ from contextlib import contextmanager
 class Logger:
     '''Class for Logger, to write a log file.'''
     # constants for a log, can be changed as per preference
-    _ROWLENGTH = 100
+    _ROWLENGTH = 120
     _WHITE_SPACES = 5
-    _TYPES = {'N':'', 'I':'[INFO] ', 'E':'[ERROR] ', 'D':'[DEBUG] '}
+    _TYPES = {'N':'', 'I':'[I] ', 'E':'[E] ', 'D':'[D] '}
     verbose = False
 
     def __init__(self, path, verb):
