@@ -426,7 +426,7 @@ def run_backup(backup, path, log):
 
     # Construct the "reading" part of the dd + gzip command
     readcmd = '/usr/bin/ssh ' + backup.remote_login + '@' + backup.remote_host \
-        + ' "usr/bin/sudo /usr/bin/dd if='+ backup.remote_file + ' bs=' + backup.block_size \
+        + ' "/usr/bin/sudo /usr/bin/dd if='+ backup.remote_file + ' bs=' + backup.block_size \
         + ' | /usr/bin/gzip -1 -"'
 
     log.write(backup.name + ' read command:', 'D')
