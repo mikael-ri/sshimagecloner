@@ -394,7 +394,7 @@ def prepare_path(root_path, folder):
     err_count = 0
     msg = ""
 
-    backup_folder = root_path + folder
+    backup_folder = root_path + '/' + folder
 
     if os.path.isdir(backup_folder):
         return err_count, msg, backup_folder
