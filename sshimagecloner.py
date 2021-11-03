@@ -387,8 +387,8 @@ def prepare_path(root_folder, backupname):
             return err_count, msg, ''
         else:
             try:
-                #os.mkdir(backup_folder)
-                print('Create folder here!!')
+                os.mkdir(backup_folder)
+                print('Folder created!!')
             except PermissionError:
                 err_count += 1
                 msg += 'Cannot create folder: ' + backup_folder + ', no access rights'
