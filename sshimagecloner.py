@@ -1,3 +1,4 @@
+#!/usr/bin/python3
 '''ssh image cloner, to clone images from remote host over ssh'''
 
 ###############################################################################
