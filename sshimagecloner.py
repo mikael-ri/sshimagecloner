@@ -442,10 +442,12 @@ def run_backup(backup, path, log):
 
     writeproc.wait()
 
+    linestoprint = readproc.stderr.readlines() + writeproc.stderr.readlines()
+
     log.write(backup.name + ' : ' + backup.remote_file + ' successfully backed up')
     log.write('with following dd statistics', 'D')
-    log.write(' '.join(map(str, readproc.stderr.readlines())), 'D')
-    log.write(' '.join(map(str, writeproc.stderr.readlines())), 'D')
+    for line in linestoprint:
+        log.write(line.decode('utf-8'), 'D')
 
     # create_read_command_string(backup)
     # create_write_command()
