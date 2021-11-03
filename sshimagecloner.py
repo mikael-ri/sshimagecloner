@@ -388,7 +388,7 @@ def prepare_path(root_folder, backupname):
         else:
             try:
                 os.mkdir(backup_folder)
-                print('Folder created!!')
+                print('Folder created: ' + backup_folder)
             except PermissionError:
                 err_count += 1
                 msg += 'Cannot create folder: ' + backup_folder + ', no access rights'
@@ -444,8 +444,8 @@ def run_backup(backup, path, log):
 
     log.write(backup.name + ' : ' + backup.remote_file + ' successfully backed up')
     log.write('with following dd statistics', 'D')
-    log.write(readproc.stderr.readlines(), 'D')
-    log.write(writeproc.stderr.readlines(), 'D')
+    log.write(' '.join(map(str, readproc.stderr.readlines())), 'D')
+    log.write(' '.join(map(str, writeproc.stderr.readlines())), 'D')
 
     # create_read_command_string(backup)
     # create_write_command()
