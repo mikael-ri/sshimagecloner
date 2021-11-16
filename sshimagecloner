@@ -17,6 +17,7 @@
 ###############################################################################
 import os
 import sys
+import codecs
 import datetime
 import getopt
 import collections
@@ -43,11 +44,11 @@ import logger
 class LogWriter:
     '''A simple class to handle the verbosity and log writing'''
 
-    def __init__(self, log_object, level, written):
+    def __init__(self, log_object, level, written, test):
         self.log = log_object
         self.log_level = level
         self.is_log_written = written
-        if self.is_log_written:
+        if self.is_log_written and not test:
             with self.log.log_writer() as log_obj:
                 log_obj.write_starting_row('Logging initiated, log level set to ' \
                      + str(self.log_level))
@@ -91,7 +92,7 @@ def main(args):
     '''Main function to execute the code'''
 
     e_cnt = 0
-    e_msg = ""
+    e_msg = ''
 
     # Parse the arguments, if any
     e_cnt, e_msg, cmd_args = parse_cmd_arguments(args)
@@ -119,11 +120,17 @@ def main(args):
         return
 
     # Set up logging
-    log = logger.Logger(conf.log_file, cmd_args.verbose)
-    my_log = LogWriter(log, conf.log_level, conf.is_log_written)
+    log = None
+    my_log = None
+    if cmd_args.testrun:
+        log = logger.Logger(os.devnull, True)
+        my_log = LogWriter(log, 0, True, True)
+    else:
+        log = logger.Logger(conf.log_file, cmd_args.verbose)
+        my_log = LogWriter(log, conf.log_level, conf.is_log_written, False)
 
     my_log.write('All arguments and parameters parsed successfully, found ' \
-        + str(len(all_backups)) + ' backups')
+        + str(len(all_backups)) + ' backups from config file', 'D')
 
     my_log.write('Command line arguments are:', 'D')
     my_log.write(str(cmd_args), 'D')
@@ -148,22 +155,28 @@ def main(args):
         print(e_msg)
         return
 
+    my_log.write(str(len(backups_to_process)) + ' backups to be processed', 'I')
+
+
     # If target_folder is given from command line, then replace it for all backups to be processed
     if cmd_args.target_folder is not None:
         backups_to_process = replace_target_folder(backups_to_process, cmd_args.target_folder)
 
     # Process through the selected backups
-    for key in backups_to_process:
+    for key, backup in backups_to_process.items():
         # Check if the backup-specific folder exists, if not create
-        e_cnt, e_msg, path = prepare_path(conf.root_folder, backups_to_process[key].target_folder)
+        e_cnt, e_msg, path = prepare_path(conf.root_folder,
+            backup.target_folder,
+            my_log,
+            cmd_args.testrun)
         if  e_cnt > 0:
-            my_log.write(e_msg, 'E')
+            my_log.write(key + ': ' + e_msg, 'E')
             print(e_msg)
             return
         # Run the backup
-        e_cnt, e_msg = run_backup(backups_to_process[key], path, my_log)
+        e_cnt, e_msg = run_backup(backup, path, my_log, cmd_args.testrun)
         if e_cnt > 0:
-            my_log.write(e_msg, 'E')
+            my_log.write(key + ': ' + e_msg, 'E')
             print(e_msg)
             return
 
@@ -179,15 +192,16 @@ def main(args):
 def parse_cmd_arguments(arg):
     '''Parse command line arguments and return them as namedtuple'''
 
-    usage = 'Usage: sshimagecloner.py [-h | --help] [-v] ' '[-c | --conffile configfile] \n' \
-        + '[-f | --folder folder] [backupname_1] [backupname_2] [backupname...n]'
+    usage = 'Usage: sshimagecloner [-h | --help] [-t | --test] [-v] \n' \
+        + '[-c | --conffile configfile] [-f | --folder folder] \n' \
+        + '[backupname_1] [backupname_2] [backupname...n]'
 
     err_count = 0
     msg = ''
 
     # Try to read the options and arguments from command line input
     try:
-        opts, args = getopt.getopt(arg, 'hc:f:v', ['help', 'conffile=', 'folder='])
+        opts, args = getopt.getopt(arg, 'htc:f:v', ['help', 'test', 'conffile=', 'folder='])
     except getopt.GetoptError:
         err_count += 1
         msg += '[ERROR] Could not parse command line options, possibly unrecognized option\n'
@@ -198,6 +212,7 @@ def parse_cmd_arguments(arg):
     conf_file = None
     target_folder = None
     verbose = False
+    testrun = False
     for opt, val in opts:
         if opt == '-v':
             verbose = True
@@ -208,6 +223,8 @@ def parse_cmd_arguments(arg):
             conf_file = val
         elif opt in ('-f', '--folder'):
             target_folder = val
+        elif opt in ('-t', '--test'):
+            testrun = True
         else:
             print(opt + ' XX ' + val)
             err_count += 1
@@ -223,8 +240,8 @@ def parse_cmd_arguments(arg):
             cmd_backups[val] = val
 
     Arguments = collections.namedtuple('Arguments',
-    ['conf_file', 'target_folder', 'verbose', 'configtest', 'cmd_backups'])
-    arguments = Arguments(conf_file, target_folder, verbose, configtest, cmd_backups)
+    ['conf_file', 'target_folder', 'verbose', 'configtest', 'cmd_backups', 'testrun'])
+    arguments = Arguments(conf_file, target_folder, verbose, configtest, cmd_backups, testrun)
     return err_count, msg, arguments
 
     # End of def parse_cmd_arguments(arg)
@@ -246,7 +263,7 @@ def parse_config_file(path):
         err_count += 1
         msg += '[ERROR] config file: ' + path + ' does not exist!\n'
     else:
-        config_file = open(path)
+        config_file = codecs.open(path, 'r', 'utf-8')
         try:
             yaml_conf = yaml.load(config_file, Loader=yaml.FullLoader)
         except ScannerError:
@@ -366,7 +383,7 @@ def parse_config_file(path):
 def select_for_processing(cmdback, allback):
     '''Function to select the backups to be processed based on cmdline arguments.'''
     err_count = 0
-    msg = ""
+    msg = ''
     backups_to_process = {}
     for key in cmdback:
         if key in allback.keys():
@@ -379,25 +396,27 @@ def select_for_processing(cmdback, allback):
     # Enf of def select_for_processing(cmdback, allback)
 
 
+# Method to replace the target folder of the backups.
 def replace_target_folder(backups, folder):
     '''Function to replace the target folder'''
 
-    for key in backups:
-        backups[key] = backups[key]._replace(target_folder = folder)
+    for key, value in backups.items():
+        backups[key] = value._replace(target_folder = folder)
 
     return backups
     # End of def replace_target_folder(backups, folder)
 
 
-def prepare_path(root_path, folder):
+# Method to create (if needed) the full backup path and return that.
+def prepare_path(root_path, folder, log, test):
     '''Function to return the full backup path, and create if it does not exist'''
     err_count = 0
-    msg = ""
+    msg = ''
 
     backup_folder = root_path + '/' + folder
 
     if os.path.isdir(backup_folder):
-        return err_count, msg, backup_folder
+        return 0, '', backup_folder
     else:
         if os.path.exists(backup_folder):
             err_count += 1
@@ -405,7 +424,10 @@ def prepare_path(root_path, folder):
             return err_count, msg, ''
         else:
             try:
-                os.makedirs(backup_folder)
+                log.write('Create the full directory stucture', 'D')
+                log.write('mkdir -p' + backup_folder, 'N')
+                if not test:
+                    os.makedirs(backup_folder)
             except PermissionError:
                 err_count += 1
                 msg += 'Cannot create folder: ' + backup_folder + ', no access rights'
@@ -413,21 +435,116 @@ def prepare_path(root_path, folder):
 
     return err_count, msg, backup_folder
 
-    # End of def prepare_path(backup)
-
+    # End of def prepare_path(root_path, folder, log, test)
 
 # Method to run one backup
-def run_backup(backup, path, log):
-    '''Function to process one backup.'''
+def run_backup(backup, path, log, test):
+    '''Function to process one backup'''
     err_count = 0
-    msg = ""
+    msg = ''
 
-    log.write('Starting to process ' + backup.name + ' : ' + backup.remote_file)
+    if backup.remote_host == 'localhost':
+        err_count, msg = run_local_backup(backup, path, log, test)
+    else:
+        err_count, msg = run_remote_backup(backup, path, log, test)
+
+    return err_count, msg
+    # End of def def run_backup(backup, path, log, test)
+
+
+# Method to run one local backup
+def run_local_backup(backup, path, log, test):
+    '''Function to process one backup from local machine'''
+    err_count = 0
+    msg = ''
+
+    log.write('Starting to process localhost ' + backup.name + ' : ' + backup.remote_file, 'I')
+
+    # Construct the read command
+    readcmd = '/usr/bin/sudo /usr/bin/dd if='+ backup.remote_file + ' bs=' + backup.block_size
+
+    log.write(backup.name + ' read command:', 'D')
+    log.write(readcmd, 'D')
+
+    # Create the target filename, full path. ._tmp -extension is used during the write
+    timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S_')
+    target_file = path + '/' + timestamp + backup.target_file
+    target_file_tmp = path + '/' + timestamp + backup.target_file + '._tmp'
+
+    # Construct the write part of overall dd-command.
+    gzipcmd = '/usr/bin/gzip -4'
+
+    log.write(backup.name + ' gzip command:', 'D')
+    log.write(gzipcmd, 'D')
+
+    log.write('Full copy command;', 'D')
+    log.write(readcmd + ' | ' + gzipcmd + ' > ' + target_file, 'N')
+
+    # Split the command line options / process commands for subprocess.Popen command
+    readsplit = shlex.split(readcmd)
+    gzipsplit = shlex.split(gzipcmd)
+
+    readproc = None
+    gzipproc = None
+    linestoprint = []
+    if not test:
+        try:
+            outputfile = open(target_file_tmp, 'wb')
+            # Start the process providing the read stream
+            readproc = subprocess.Popen(readsplit,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE)
+
+            # Pipe the read streams output to write streams input
+            gzipproc = subprocess.Popen(gzipsplit,
+            stdin=readproc.stdout,
+            stdout=outputfile,
+            stderr=subprocess.PIPE)
+
+            # Wait until the writing process finishes, and flush everything.
+            gzipproc.wait()
+            outputfile.flush()
+            outputfile.close()
+
+            linestoprint = readproc.stderr.readlines()
+        except OSError as err:
+            err_count += 1
+            msg += 'Something went wrong with the read and write processes'
+            print(err)
+            return err_count, msg
+
+    # Rename the target file to standard name.
+    log.write('Renaming ' + target_file_tmp + ' to ' + target_file, 'D')
+    log.write('mv ' + target_file_tmp + ' ' + target_file, 'N')
+    if not test:
+        os.rename(target_file_tmp, target_file)
+
+
+    log.write(backup.name + ' : ' + backup.remote_file + ' successfully' \
+        + 'backed up as ' + target_file, 'I')
+
+    log.write('with following dd statistics', 'D')
+    for line in linestoprint:
+        log.write(line.decode('utf-8'), 'D')
+
+
+    return err_count, msg
+    # End of def run_local_backup(backup, path, log, test)
+
+
+# Method to run one remote backup
+def run_remote_backup(backup, path, log, test):
+    '''Function to process one backup from a remote machine.'''
+    err_count = 0
+    msg = ''
+
+    log.write('Starting to process remote host ' + backup.name + ' : ' + backup.remote_file, 'I')
 
     # Construct the "reading" part of the dd + gzip command
     readcmd = '/usr/bin/ssh ' + backup.remote_login + '@' + backup.remote_host \
         + ' "/usr/bin/sudo /usr/bin/dd if='+ backup.remote_file + ' bs=' + backup.block_size \
-        + ' | /usr/bin/gzip -1 -"'
+        + ' | /usr/bin/gzip -4 -"'
 
     log.write(backup.name + ' read command:', 'D')
     log.write(readcmd, 'D')
@@ -443,43 +560,51 @@ def run_backup(backup, path, log):
     log.write(backup.name + ' write command:', 'D')
     log.write(writecmd, 'D')
 
+    log.write('Full copy command;', 'D')
+    log.write(readcmd + ' | ' + writecmd, 'N')
+
     # Split the command line options / process commands for subprocess.Popen command
     readsplit = shlex.split(readcmd)
     writesplit = shlex.split(writecmd)
 
     readproc = None
     writeproc = None
+    linestoprint = []
+    if not test:
+        try:
+            # Start the process providing the read stream
+            readproc = subprocess.Popen(readsplit,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE)
 
-    try:
-        # Start the process providing the read stream
-        readproc = subprocess.Popen(readsplit,
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE)
+            # Pipe the read streams output to write streams input
+            writeproc = subprocess.Popen(writesplit,
+            stdin=readproc.stdout,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE)
 
-        # Pipe the read streams output to write streams input
-        writeproc = subprocess.Popen(writesplit,
-        stdin=readproc.stdout,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE)
+            # Wait until the writing process finishes, and flush everything.
+            writeproc.wait()
+            writeproc.stdout.flush()
 
-        # Wait until the writing process finishes, and flush everything.
-        writeproc.wait()
-        writeproc.stdout.flush()
-    except OSError:
-        err_count += 1
-        msg += 'Something went wrong with the read and write processes'
-        return err_count, msg
+            linestoprint = readproc.stderr.readlines() + writeproc.stderr.readlines()
+        except OSError as err:
+            err_count += 1
+            msg += 'Something went wrong with the read and write processes'
+            print(err)
+            return err_count, msg
 
     # Rename the target file to standard name.
     log.write('Renaming ' + target_file_tmp + ' to ' + target_file, 'D')
-    os.rename(target_file_tmp, target_file)
+    log.write('mv ' + target_file_tmp + ' ' + target_file, 'N')
+    if not test:
+        os.rename(target_file_tmp, target_file)
 
-    linestoprint = readproc.stderr.readlines() + writeproc.stderr.readlines()
 
     log.write(backup.name + ' : ' + backup.remote_file + ' successfully' \
-        + 'backed up as ' + target_file)
-        
+        + 'backed up as ' + target_file, 'I')
+
     log.write('with following dd statistics', 'D')
     for line in linestoprint:
         log.write(line.decode('utf-8'), 'D')
@@ -487,10 +612,10 @@ def run_backup(backup, path, log):
 
     return err_count, msg
 
-    # End of def run_backup(backup):
+    # End of def run__remote_backup(backup, path, log, test)
 
 
 
 # Run the main function
-if __name__ == "__main__":
+if __name__ == '__main__':
     main(sys.argv[1:])

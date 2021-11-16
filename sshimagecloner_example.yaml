@@ -1,7 +1,7 @@
 ###############################################################################
 ##                            ssh image cloner                               ##
 ##                                                                           ##
-## NB! All folders must not have a trailing slash!                           ##
+## NB! Folders must not have a trailing slash!                               ##
 ##                                                                           ##
 ## NB! Please make sure that the intendation stays correct and not tampered  ##
 ## with, and that it complies with yaml-specifications                       ##
@@ -40,7 +40,7 @@ backups:
   #Example configuration
   # "Your name for the backup":
   #   remote_login: "username to log in to the host"
-  #   remote_host: "ip or dns name for the host where to backup"
+  #   remote_host: "ip or dns name for the host where to backup, use localhost for localhost
   #   remote_file: "disk to clone, for RPi usually /dev/mmcblk0"
   #   target_file: "filename of the backup image"
   #   block_size: "block size for dd, if in doubt, use 64k"
@@ -54,7 +54,14 @@ backups:
 
   RPi_2:
     remote_login: backup_user
-    remote_host: 10.0.0.2
+    remote_host: rpi2.mynetwork.local
     remote_file: /dev/mmcblk0
     target_file: RPi_2.img.gz
     block_size: 64k
+
+  RPi_23:
+    remote_login: na
+    remote_host: localhost
+    remote_file: /dev/mmcblk0
+    target_file: RPi_3.img.gz
+    block_size: 4M
