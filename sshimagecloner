@@ -94,13 +94,15 @@ def main(args):
     e_cnt = 0
     e_msg = ''
 
-    # Parse the arguments, if any
+    # Parse the arguments (from command line), if any
     e_cnt, e_msg, cmd_args = parse_cmd_arguments(args)
 
     # End execution if errors in parsing arguments
     if e_cnt > 0:
         print(e_msg)
         return
+
+    # TODO Should the arguments be validated here? At least the config file path and target folder?
 
     # Read and parse the configuration file
     if cmd_args.conf_file is None:
@@ -162,6 +164,8 @@ def main(args):
     if cmd_args.target_folder is not None:
         backups_to_process = replace_target_folder(backups_to_process, cmd_args.target_folder)
 
+    # TODO Fix below, only the backup specific folder should be created, not the path before it
+
     # Process through the selected backups
     for key, backup in backups_to_process.items():
         # Check if the backup-specific folder exists, if not create
@@ -217,8 +221,8 @@ def parse_cmd_arguments(arg):
         if opt == '-v':
             verbose = True
         elif opt in ('-h', '--help'):
-            err_count +=1
-            msg += usage
+            print(usage)
+            sys.exit(0)
         elif opt in ('-c', '--conffile'):
             conf_file = val
         elif opt in ('-f', '--folder'):
@@ -226,7 +230,6 @@ def parse_cmd_arguments(arg):
         elif opt in ('-t', '--test'):
             testrun = True
         else:
-            print(opt + ' XX ' + val)
             err_count += 1
             msg += 'Unrecognized option'
 
@@ -254,21 +257,25 @@ def parse_cmd_arguments(arg):
 # Parse the configuration file to namedtuples
 def parse_config_file(path):
     '''Parse config file and return Configuration namedtuple object and backups -list'''
+    # TODO Should the validation of configuration parameters be separated from the parsing the file?
+    # TODO Or a validator function for each parameter (maybe a module?) and call them here?
     msg = ''
     err_count = 0
 
+
     yaml_conf = {}
 
+    # Try to read the config file, exit if it foes not work
     if not os.path.exists(path):
-        err_count += 1
-        msg += '[ERROR] config file: ' + path + ' does not exist!\n'
+        sys.exit('ERROR! Config file: ' + path + ' does not exist!\n')
     else:
-        config_file = codecs.open(path, 'r', 'utf-8')
         try:
-            yaml_conf = yaml.load(config_file, Loader=yaml.FullLoader)
+            with codecs.open(path, 'r', 'utf-8') as config_file:
+                yaml_conf = yaml.load(config_file, Loader=yaml.FullLoader)
+        except PermissionError:
+            sys.exit('ERROR! Can not open configuration file for reading. Check file permissions')
         except ScannerError:
-            err_count += 1
-            msg += '[ERROR] configuration file could not be read in, check syntax\n'
+            sys.exit('ERROR! Configuration file could not be read in, check yaml syntax')
 
 
     # FIRST PARSE THE GENERAL CONFIGURATION
@@ -280,22 +287,18 @@ def parse_config_file(path):
         msg += '[ERROR] general -section is missing from config file\n'
 
 
-    # Log file path
+    # Default values of the variables from config file
     log_file = None
-    # Default log level is the minimum
     log_level = 0
-    # Default logging is totally off
     is_log_written = False
-    # Root folder where the backups are stored, needs to be set
     root_folder = None
-    # Default folder naming
     folder_naming = 'backupdir'
-    # Default amount of versions is 2
     versions = 2
 
     #Check through all the parameters needed.
     if 'log_file' in general_config:
         log_file = general_config['log_file']
+        # FIXME Check that folder for log file is writable!
         is_log_written = True
 
     if 'log_level' in general_config:
@@ -305,6 +308,7 @@ def parse_config_file(path):
         if not os.path.exists(general_config['backup_root_folder']):
             err_count += 1
             msg += '[ERROR] backup_root_folder does not exist\n'
+        # FIXME Check that the backup root folder is writable!!
         root_folder = general_config['backup_root_folder']
     else:
         err_count += 1
@@ -378,6 +382,21 @@ def parse_config_file(path):
     return err_count, msg, conf, all_backups
     # End of def parse_config_file(path)
 
+# Method to test if folder is writable
+def is_folder_writable(folder):
+    '''Function to check if folder is writable'''
+    tmppath = folder+'/sshig_tstfile.tmp.' + datetime.datetime.now().strftime('%Y%m%d_%H%M%S_')
+    try:
+        with codecs.open(tmppath, 'w', 'utf-8') as tmpfile:
+            tmpfile.write('Testcontent')
+    except PermissionError:
+        return False
+
+    if os.path.exists(tmppath):
+        os.remove(tmppath)
+
+    return True
+    # End of def is_folder_writable(path)
 
 # Method to select backups to be processed
 def select_for_processing(cmdback, allback):
