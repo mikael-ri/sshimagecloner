@@ -32,7 +32,7 @@ from yaml.scanner import ScannerError
 ## Own modules                                                               ##
 ###############################################################################
 import helpers.logger as logger
-import helpers.filesystemchecks
+import helpers.filesystemchecks as fschecks
 
 
 ###############################################################################
@@ -92,23 +92,27 @@ CONFIG_FILE_PATH = './sshimagecloner.yaml'
 def main(args):
     '''Main function to execute the code'''
 
+    # Error count and message; used throughout the code.
     e_cnt = 0
     e_msg = ''
 
-    # Parse the arguments (from command line), if any
+    # Parse and validate arguments (from command line), if any
     e_cnt, e_msg, cmd_args = parse_cmd_arguments(args)
-
-    # End execution if errors in parsing arguments
     if e_cnt > 0:
-        print(e_msg)
-        sys.exit(1)
+        sys.exit(e_msg)
 
-    # TODO write validate_cmd_arguments -function. if files / folders are passed, they must exist.
+
+    e_cnt, e_msg, cmd_args = validate_and_fix_cmd_arguments(cmd_args)
+    if e_cnt > 0:
+        sys.exit('Error in command line arguments:\n' + e_msg)
+
 
     # Read and parse the configuration file
     if cmd_args.conf_file is None:
-        # TODO Check that the config file exists here, before calling
-        e_cnt, e_msg, conf, all_backups = parse_config_file(CONFIG_FILE_PATH)
+        if fschecks.file_exists(CONFIG_FILE_PATH):
+            e_cnt, e_msg, conf, all_backups = parse_config_file(CONFIG_FILE_PATH)
+        else:
+            sys.exit('Configuration file ' + CONFIG_FILE_PATH + ' does not exist!')
     else:
         e_cnt, e_msg, conf, all_backups = parse_config_file(cmd_args.conf_file)
 
@@ -198,11 +202,6 @@ def main(args):
 
 
 
-#------------------------------------------------------------------------------
-# Method to parse the command line arguments passed
-#------------------------------------------------------------------------------
-
-# Parse command line arguments
 def parse_cmd_arguments(arg):
     '''Parse command line arguments and return them as namedtuple'''
 
@@ -227,6 +226,7 @@ def parse_cmd_arguments(arg):
     target_folder = None
     verbose = False
     testrun = False
+
     for opt, val in opts:
         if opt == '-v':
             verbose = True
@@ -260,31 +260,51 @@ def parse_cmd_arguments(arg):
     # End of def parse_cmd_arguments(arg)
 
 
-#------------------------------------------------------------------------------
-# Method to parse the configuration file
-#------------------------------------------------------------------------------
+def validate_and_fix_cmd_arguments(arguments):
+    '''Validates (relevant) arguments from commandline arguments.
+    Replaces file and folder arguments with full path.'''
+    err_count = 0
+    msg = ''
+    args = arguments
 
-# Parse the configuration file to namedtuples
+    if args.target_folder is not None:
+        if fschecks.folder_exists(args.target_folder):
+            if fschecks.is_folder_writable(args.target_folder):
+                args = args._replace(target_folder = os.path.realpath(args.target_folder))
+            else:
+                err_count += 1
+                msg += 'Target folder ' + args.target_folder + ' cannot be written in\n'
+        else:
+            err_count += 1
+            msg += 'Target folder ' + args.target_folder + ' does not exist\n'
+
+    if args.conf_file is not None:
+        if fschecks.file_exists(args.conf_file):
+            args = args._replace(conf_file = os.path.realpath(args.conf_file))
+        else:
+            err_count += 1
+            msg += 'Configuration file ' + args.conf_file + ' does not exist\n'
+
+    return err_count, msg, args
+
+    # End of def validate_and_fix_cmd_arguments(args)
+
+
 def parse_config_file(path):
     '''Parse config file and return Configuration namedtuple object and backups -list'''
-    # TODO Only parse the content here, write a separate validator to validate the params
     msg = ''
     err_count = 0
-
 
     yaml_conf = {}
 
     # Try to read the config file, exit if it foes not work
-    if not os.path.exists(path):
-        sys.exit('ERROR! Config file: ' + path + ' does not exist!\n')
-    else:
-        try:
-            with codecs.open(path, 'r', 'utf-8') as config_file:
-                yaml_conf = yaml.load(config_file, Loader=yaml.FullLoader)
-        except PermissionError:
-            sys.exit('ERROR! Can not open configuration file for reading. Check file permissions')
-        except ScannerError:
-            sys.exit('ERROR! Configuration file could not be read in, check yaml syntax')
+    try:
+        with codecs.open(path, 'r', 'utf-8') as config_file:
+            yaml_conf = yaml.load(config_file, Loader=yaml.FullLoader)
+    except PermissionError:
+        sys.exit('ERROR! Can not open configuration file for reading. Check file permissions')
+    except ScannerError:
+        sys.exit('ERROR! Configuration file could not be read in, check yaml syntax')
 
 
     # FIRST PARSE THE GENERAL CONFIGURATION
@@ -307,7 +327,6 @@ def parse_config_file(path):
     #Check through all the parameters needed.
     if 'log_file' in general_config:
         log_file = general_config['log_file']
-        # FIXME Check that folder for log file is writable!
         is_log_written = True
 
     if 'log_level' in general_config:
@@ -392,9 +411,39 @@ def parse_config_file(path):
     # End of def parse_config_file(path)
 
 
-# Method to select backups to be processed
+def validate_and_fix_config_file_parameters(conf_nt, backups_nt):
+    '''Validate the parameters parsed from configuration file
+    Replace files and folders with full path.'''
+
+    err_count = 0
+    msg = ''
+
+    conf = conf_nt
+    backups = backups_nt
+
+    if conf.log_file is not None:
+        if fschecks.file_exists(conf.log_file):
+            if fschecks.is_file_writable(conf.log_file):
+                conf = conf._replace(log_file = os.path.realpath(conf.log_file))
+            else:
+                err_count += 1
+                msg += 'Log file ' + conf.log_file + ' is not writable'
+        else:
+            log_folder = fschecks.get_files_folder(conf.log_file)
+            if fschecks.is_folder_writable(log_folder):
+                conf = conf._replace(log_file = os.path.realpath(conf.log_file))
+            else:
+                err_count += 1
+                msg += 'Log file does not exist and folder ' + log_folder + ' is not writable\n'
+
+    # TODO finalize the functionality here!!
+
+    return err_count, msg, conf, backups
+
+    # End of def validate_config_file_parameters(conf, backups)
+
 def select_for_processing(cmdback, allback):
-    '''Function to select the backups to be processed based on cmdline arguments.'''
+    '''Select the backups to be processed based on cmdline arguments.'''
     err_count = 0
     msg = ''
     backups_to_process = {}

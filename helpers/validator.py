@@ -26,9 +26,3 @@ def backup_name(str_in):
         'and can only contain a-z A-Z 0-9 . - _ '
 
     return ValidatorResult(bool(pat.match(str_in)), msg)
-
-
-if backup_name('.rproxy_RPi'):
-    print('Jeeee')
-else:
-    print(backup_name('.rproxy_RPi').message)
