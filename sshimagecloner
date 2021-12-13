@@ -31,7 +31,8 @@ from yaml.scanner import ScannerError
 ###############################################################################
 ## Own modules                                                               ##
 ###############################################################################
-import logger
+import helpers.logger as logger
+import helpers.filesystemchecks
 
 
 ###############################################################################
@@ -100,12 +101,13 @@ def main(args):
     # End execution if errors in parsing arguments
     if e_cnt > 0:
         print(e_msg)
-        return
+        sys.exit(1)
 
-    # TODO Should the arguments be validated here? At least the config file path and target folder?
+    # TODO write validate_cmd_arguments -function. if files / folders are passed, they must exist.
 
     # Read and parse the configuration file
     if cmd_args.conf_file is None:
+        # TODO Check that the config file exists here, before calling
         e_cnt, e_msg, conf, all_backups = parse_config_file(CONFIG_FILE_PATH)
     else:
         e_cnt, e_msg, conf, all_backups = parse_config_file(cmd_args.conf_file)
@@ -114,12 +116,18 @@ def main(args):
     if e_cnt > 0:
         print('Errors in parsing the configuration file:\n')
         print(e_msg)
-        return
+        sys.exit(1)
+
+    # TODO Clean the parse_config_file function, only focus on parsing there
+
+    # TODO Create a validate_config_params function, which validates the inputs to allowed values
+    # stop execution with sys.exit(1) if problems in validation
+    # again, files and folders must exist, except for log file, but log folder must be writable
 
     # If run as configtest, end process here
     if cmd_args.configtest:
         print('Config file content seems to be OK!')
-        return
+        sys.exit(0)
 
     # Set up logging
     log = None
@@ -184,12 +192,14 @@ def main(args):
             print(e_msg)
             return
 
+    # TODO Loop through all backups, and remove those which exceed the allowed count
+
     # End of def main(args)
 
 
 
 #------------------------------------------------------------------------------
-# Methof to parse the command line arguments passed
+# Method to parse the command line arguments passed
 #------------------------------------------------------------------------------
 
 # Parse command line arguments
@@ -257,8 +267,7 @@ def parse_cmd_arguments(arg):
 # Parse the configuration file to namedtuples
 def parse_config_file(path):
     '''Parse config file and return Configuration namedtuple object and backups -list'''
-    # TODO Should the validation of configuration parameters be separated from the parsing the file?
-    # TODO Or a validator function for each parameter (maybe a module?) and call them here?
+    # TODO Only parse the content here, write a separate validator to validate the params
     msg = ''
     err_count = 0
 
@@ -382,21 +391,6 @@ def parse_config_file(path):
     return err_count, msg, conf, all_backups
     # End of def parse_config_file(path)
 
-# Method to test if folder is writable
-def is_folder_writable(folder):
-    '''Function to check if folder is writable'''
-    tmppath = folder+'/sshig_tstfile.tmp.' + datetime.datetime.now().strftime('%Y%m%d_%H%M%S_')
-    try:
-        with codecs.open(tmppath, 'w', 'utf-8') as tmpfile:
-            tmpfile.write('Testcontent')
-    except PermissionError:
-        return False
-
-    if os.path.exists(tmppath):
-        os.remove(tmppath)
-
-    return True
-    # End of def is_folder_writable(path)
 
 # Method to select backups to be processed
 def select_for_processing(cmdback, allback):
@@ -443,6 +437,7 @@ def prepare_path(root_path, folder, log, test):
             return err_count, msg, ''
         else:
             try:
+                # FIXME Do not create the full structure, exit if root path does not exist!!
                 log.write('Create the full directory stucture', 'D')
                 log.write('mkdir -p' + backup_folder, 'N')
                 if not test:
@@ -496,7 +491,7 @@ def run_local_backup(backup, path, log, test):
     log.write(backup.name + ' gzip command:', 'D')
     log.write(gzipcmd, 'D')
 
-    log.write('Full copy command;', 'D')
+    log.write('Full copy command:', 'D')
     log.write(readcmd + ' | ' + gzipcmd + ' > ' + target_file, 'N')
 
     # Split the command line options / process commands for subprocess.Popen command
@@ -632,7 +627,6 @@ def run_remote_backup(backup, path, log, test):
     return err_count, msg
 
     # End of def run__remote_backup(backup, path, log, test)
-
 
 
 # Run the main function
