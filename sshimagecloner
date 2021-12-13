@@ -101,7 +101,8 @@ def main(args):
     if e_cnt > 0:
         sys.exit(e_msg)
 
-
+    # FIXME change so that there is no separate validation, but each argument is validated after parsing
+    # and there is a small function for each parsing.
     e_cnt, e_msg, cmd_args = validate_and_fix_cmd_arguments(cmd_args)
     if e_cnt > 0:
         sys.exit('Error in command line arguments:\n' + e_msg)
