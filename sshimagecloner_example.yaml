@@ -22,16 +22,6 @@ general:
   # NB! This folder must exist
   backup_root_folder: /backups
   
-  # How the "version" -folders are named, pick anything that makes sense
-  # to you, e.g. daily, weekly, monthly etc. Folders are then named as 
-  # e.g. "daily.0", "daily.1" etc. 0 being the most recent file.
-  # default: backupdir
-  folder_naming: weekly
-
-  # How many versions of images are kept
-  # default 2
-  versions: 26
-
 # backups to be run
 backups:
   # A list of backups
@@ -43,25 +33,25 @@ backups:
   #   remote_host: "ip or dns name for the host where to backup, use localhost for localhost
   #   remote_file: "disk to clone, for RPi usually /dev/mmcblk0"
   #   target_file: "filename of the backup image"
-  #   block_size: "block size for dd, if in doubt, use 64k"
+  #   versions: number of versions to be stored of each image
 
   RPi_1:
     remote_login: backup_user
     remote_host: 10.0.0.1
     remote_file: /dev/mmcblk0
     target_file: RPi_1.img.gz
-    block_size: 64k
+    versions: 26
 
   RPi_2:
     remote_login: backup_user
     remote_host: rpi2.mynetwork.local
     remote_file: /dev/mmcblk0
     target_file: RPi_2.img.gz
-    block_size: 64k
+    versions: 26
 
   RPi_23:
     remote_login: na
     remote_host: localhost
     remote_file: /dev/mmcblk0
     target_file: RPi_3.img.gz
-    block_size: 4M
+    versions: 26

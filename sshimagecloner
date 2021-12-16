@@ -20,7 +20,6 @@ import sys
 import codecs
 import datetime
 import getopt
-import collections
 import subprocess
 import shlex
 import yaml
@@ -31,9 +30,10 @@ from yaml.scanner import ScannerError
 ###############################################################################
 ## Own modules                                                               ##
 ###############################################################################
-import helpers.logger as logger
-import helpers.filesystemchecks as fschecks
-
+from helpers import Logger
+from helpers import CmdArguments
+from helpers import validator
+from helpers.clonerclasses import Backup, ConfigFile
 
 ###############################################################################
 ## My own custom classes                                                     ##
@@ -101,19 +101,13 @@ def main(args):
     if e_cnt > 0:
         sys.exit(e_msg)
 
-    # FIXME change so that there is no separate validation, but each argument is validated after parsing
-    # and there is a small function for each parsing.
-    e_cnt, e_msg, cmd_args = validate_and_fix_cmd_arguments(cmd_args)
-    if e_cnt > 0:
-        sys.exit('Error in command line arguments:\n' + e_msg)
-
-
     # Read and parse the configuration file
     if cmd_args.conf_file is None:
-        if fschecks.file_exists(CONFIG_FILE_PATH):
-            e_cnt, e_msg, conf, all_backups = parse_config_file(CONFIG_FILE_PATH)
+        v_r = validator.file_read(CONFIG_FILE_PATH)
+        if v_r.result:
+            e_cnt, e_msg, conf, all_backups = parse_config_file(v_r.value)
         else:
-            sys.exit('Configuration file ' + CONFIG_FILE_PATH + ' does not exist!')
+            sys.exit(v_r.message)
     else:
         e_cnt, e_msg, conf, all_backups = parse_config_file(cmd_args.conf_file)
 
@@ -123,12 +117,6 @@ def main(args):
         print(e_msg)
         sys.exit(1)
 
-    # TODO Clean the parse_config_file function, only focus on parsing there
-
-    # TODO Create a validate_config_params function, which validates the inputs to allowed values
-    # stop execution with sys.exit(1) if problems in validation
-    # again, files and folders must exist, except for log file, but log folder must be writable
-
     # If run as configtest, end process here
     if cmd_args.configtest:
         print('Config file content seems to be OK!')
@@ -137,11 +125,11 @@ def main(args):
     # Set up logging
     log = None
     my_log = None
-    if cmd_args.testrun:
-        log = logger.Logger(os.devnull, True)
+    if cmd_args.test:
+        log = Logger(os.devnull, True)
         my_log = LogWriter(log, 0, True, True)
     else:
-        log = logger.Logger(conf.log_file, cmd_args.verbose)
+        log = Logger(conf.log_file, cmd_args.verbose)
         my_log = LogWriter(log, conf.log_level, conf.is_log_written, False)
 
     my_log.write('All arguments and parameters parsed successfully, found ' \
@@ -160,8 +148,8 @@ def main(args):
 
     # Compare the command line arguments with config file backups
     backups_to_process = {}
-    if len(cmd_args.cmd_backups) > 0:
-        e_cnt, e_msg, backups_to_process = select_for_processing(cmd_args.cmd_backups, all_backups)
+    if len(cmd_args.backup_names) > 0:
+        e_cnt, e_msg, backups_to_process = select_for_processing(cmd_args.backup_names, all_backups)
     else:
         backups_to_process = all_backups
 
@@ -185,13 +173,13 @@ def main(args):
         e_cnt, e_msg, path = prepare_path(conf.root_folder,
             backup.target_folder,
             my_log,
-            cmd_args.testrun)
+            cmd_args.test)
         if  e_cnt > 0:
             my_log.write(key + ': ' + e_msg, 'E')
             print(e_msg)
             return
         # Run the backup
-        e_cnt, e_msg = run_backup(backup, path, my_log, cmd_args.testrun)
+        e_cnt, e_msg = run_backup(backup, path, my_log, cmd_args.test)
         if e_cnt > 0:
             my_log.write(key + ': ' + e_msg, 'E')
             print(e_msg)
@@ -204,7 +192,7 @@ def main(args):
 
 
 def parse_cmd_arguments(arg):
-    '''Parse command line arguments and return them as namedtuple'''
+    '''Parse and validate command line arguments and return CmdArguments object'''
 
     usage = 'Usage: sshimagecloner [-h | --help] [-t | --test] [-v] \n' \
         + '[-c | --conffile configfile] [-f | --folder folder] \n' \
@@ -222,73 +210,48 @@ def parse_cmd_arguments(arg):
         msg += usage
         return err_count, msg, None
 
+    # Check if asked for help, pring usage and exit
+    for opt, val in opts:
+        if opt in ('-h', '--help'):
+            print(usage)
+            sys.exit(0)
+
     # Process the options given.
-    conf_file = None
-    target_folder = None
-    verbose = False
-    testrun = False
+    cmdargs = CmdArguments()
 
     for opt, val in opts:
         if opt == '-v':
-            verbose = True
-        elif opt in ('-h', '--help'):
-            print(usage)
-            sys.exit(0)
+            cmdargs.verbose = True
         elif opt in ('-c', '--conffile'):
-            conf_file = val
+            v_r = validator.file_read(val)
+            if v_r.result:
+                cmdargs.conf_file = v_r.value
+            else:
+                err_count +=1
+                msg += v_r.message + '\n'
         elif opt in ('-f', '--folder'):
-            target_folder = val
+            v_r = validator.folder_write(val)
+            if v_r.result:
+                cmdargs.target_folder = v_r.value
+            else:
+                err_count +=1
+                msg += v_r.message + '\n'
         elif opt in ('-t', '--test'):
-            testrun = True
+            cmdargs.test = True
         else:
             err_count += 1
             msg += 'Unrecognized option'
 
     # Process the arguments given.
-    configtest = False
-    cmd_backups = {}
     for val in args:
         if val == 'configtest':
-            configtest = True
+            cmdargs.configtest = True
         else:
-            cmd_backups[val] = val
+            cmdargs.backup_names[val] = val
 
-    Arguments = collections.namedtuple('Arguments',
-    ['conf_file', 'target_folder', 'verbose', 'configtest', 'cmd_backups', 'testrun'])
-    arguments = Arguments(conf_file, target_folder, verbose, configtest, cmd_backups, testrun)
-    return err_count, msg, arguments
+    return err_count, msg, cmdargs
 
     # End of def parse_cmd_arguments(arg)
-
-
-def validate_and_fix_cmd_arguments(arguments):
-    '''Validates (relevant) arguments from commandline arguments.
-    Replaces file and folder arguments with full path.'''
-    err_count = 0
-    msg = ''
-    args = arguments
-
-    if args.target_folder is not None:
-        if fschecks.folder_exists(args.target_folder):
-            if fschecks.is_folder_writable(args.target_folder):
-                args = args._replace(target_folder = os.path.realpath(args.target_folder))
-            else:
-                err_count += 1
-                msg += 'Target folder ' + args.target_folder + ' cannot be written in\n'
-        else:
-            err_count += 1
-            msg += 'Target folder ' + args.target_folder + ' does not exist\n'
-
-    if args.conf_file is not None:
-        if fschecks.file_exists(args.conf_file):
-            args = args._replace(conf_file = os.path.realpath(args.conf_file))
-        else:
-            err_count += 1
-            msg += 'Configuration file ' + args.conf_file + ' does not exist\n'
-
-    return err_count, msg, args
-
-    # End of def validate_and_fix_cmd_arguments(args)
 
 
 def parse_config_file(path):
@@ -302,8 +265,6 @@ def parse_config_file(path):
     try:
         with codecs.open(path, 'r', 'utf-8') as config_file:
             yaml_conf = yaml.load(config_file, Loader=yaml.FullLoader)
-    except PermissionError:
-        sys.exit('ERROR! Can not open configuration file for reading. Check file permissions')
     except ScannerError:
         sys.exit('ERROR! Configuration file could not be read in, check yaml syntax')
 
@@ -316,44 +277,10 @@ def parse_config_file(path):
         err_count += 1
         msg += '[ERROR] general -section is missing from config file\n'
 
+    e_c, e_m, conf = read_generalconfig_section(general_config)
 
-    # Default values of the variables from config file
-    log_file = None
-    log_level = 0
-    is_log_written = False
-    root_folder = None
-    folder_naming = 'backupdir'
-    versions = 2
-
-    #Check through all the parameters needed.
-    if 'log_file' in general_config:
-        log_file = general_config['log_file']
-        is_log_written = True
-
-    if 'log_level' in general_config:
-        log_level = general_config['log_level']
-
-    if 'backup_root_folder' in general_config:
-        if not os.path.exists(general_config['backup_root_folder']):
-            err_count += 1
-            msg += '[ERROR] backup_root_folder does not exist\n'
-        # FIXME Check that the backup root folder is writable!!
-        root_folder = general_config['backup_root_folder']
-    else:
-        err_count += 1
-        msg += '[ERROR] Parameter backup_root_folder not set in config file\n'
-
-    if 'folder_naming' in general_config:
-        folder_naming = general_config['folder_naming']
-
-    if 'versions' in general_config:
-        versions = general_config['versions']
-
-    Configuration = collections.namedtuple('Config',
-    ['log_file', 'log_level', 'is_log_written', 'root_folder', 'folder_naming', 'versions'])
-
-    conf = Configuration(log_file, log_level, is_log_written, root_folder, folder_naming, versions)
-
+    err_count += e_c
+    msg += e_m
 
     # THEN PARSE THE BACKUP DETAILS
     backup_config = {}
@@ -368,80 +295,130 @@ def parse_config_file(path):
         err_count += 1
         msg += '[ERROR] No backups specified in config file\n'
 
-    all_backups = {}
-    Backup = collections.namedtuple('Backup',
-    ['name', 'remote_login', 'remote_host', 'remote_file',
-    'target_file', 'target_folder', 'block_size'])
+    e_c, e_m, all_backups = read_backupconfig_section(backup_config)
 
-    for key in backup_config:
-        try:
-            r_l = backup_config[key]['remote_login']
-        except KeyError:
-            r_l = ''
-            err_count += 1
-            msg += '[ERROR] remote_login not specified for backup: ' + key + '\n'
-        try:
-            r_h = backup_config[key]['remote_host']
-        except KeyError:
-            r_h = ''
-            err_count += 1
-            msg += '[ERROR] remote_host not specified for backup: ' + key + '\n'
-        try:
-            r_f = backup_config[key]['remote_file']
-        except KeyError:
-            r_f = ''
-            err_count += 1
-            msg += '[ERROR] remote_file not specified for backup: ' + key + '\n'
-        try:
-            t_f = backup_config[key]['target_file']
-        except KeyError:
-            t_f = ''
-            err_count += 1
-            msg += '[ERROR] target_file not specified for backup: ' + key + '\n'
-        try:
-            b_s = backup_config[key]['block_size']
-        except KeyError:
-            b_s = ''
-            err_count += 1
-            msg += '[ERROR] block_size not specified for backup: ' + key + '\n'
-
-        all_backups[key] = Backup(key, r_l, r_h, r_f, t_f, key, b_s)
-
+    err_count += e_c
+    msg += e_m
 
     return err_count, msg, conf, all_backups
     # End of def parse_config_file(path)
 
 
-def validate_and_fix_config_file_parameters(conf_nt, backups_nt):
-    '''Validate the parameters parsed from configuration file
-    Replace files and folders with full path.'''
+def read_generalconfig_section(general_config):
+    '''Read the general section from the configuration file yaml dict'''
 
+    conf = ConfigFile()
     err_count = 0
     msg = ''
 
-    conf = conf_nt
-    backups = backups_nt
-
-    if conf.log_file is not None:
-        if fschecks.file_exists(conf.log_file):
-            if fschecks.is_file_writable(conf.log_file):
-                conf = conf._replace(log_file = os.path.realpath(conf.log_file))
-            else:
-                err_count += 1
-                msg += 'Log file ' + conf.log_file + ' is not writable'
+    #Check through all the parameters needed.
+    if 'log_file' in general_config:
+        v_r = validator.file_write(general_config['log_file'])
+        if v_r.result:
+            conf.is_log_written = True
+            conf.log_file = v_r.value
         else:
-            log_folder = fschecks.get_files_folder(conf.log_file)
-            if fschecks.is_folder_writable(log_folder):
-                conf = conf._replace(log_file = os.path.realpath(conf.log_file))
+            err_count += 1
+            msg += v_r.message + '\n'
+
+    if 'log_level' in general_config:
+        v_r = validator.log_level(general_config['log_level'])
+        if v_r.result:
+            conf.log_level = v_r.value
+        else:
+            err_count += 1
+            msg += v_r.message + '\n'
+
+    if 'backup_root_folder' in general_config:
+        v_r = validator.folder_write(general_config['backup_root_folder'])
+        if v_r.result:
+            conf.root_folder = v_r.value
+        else:
+            err_count += 1
+            msg += v_r.message + '\n'
+    else:
+        err_count += 1
+        msg += '[ERROR] Parameter backup_root_folder not set in config file\n'
+
+    return err_count, msg, conf
+
+    # End of read_generalconfig_section(general_config)
+
+def read_backupconfig_section(backup_config):
+    '''Read the backups section from the configuration yaml dict'''
+
+    all_backups = {}
+    err_count = 0
+    msg = ''
+
+    for key in backup_config:
+        backup = Backup()
+
+        v_r = validator.backup_name(key)
+        if v_r.result:
+            pass
+        else:
+            err_count += 1
+            msg += v_r.message + '\n'
+
+        backup.name = key
+
+        try:
+            v_r = validator.ip_address_or_host(backup_config[key]['remote_host'])
+            if v_r.result:
+                backup.remote_host = v_r.value
             else:
                 err_count += 1
-                msg += 'Log file does not exist and folder ' + log_folder + ' is not writable\n'
+                msg += v_r.message + '\n'
+        except KeyError:
+            err_count += 1
+            msg += '[ERROR] remote_host not specified for backup: ' + key + '\n'
+        try:
+            v_r = validator.remote_login(backup_config[key]['remote_login'])
+            if v_r.result:
+                backup.remote_login = v_r.value
+            else:
+                err_count += 1
+                msg += v_r.message + '\n'
+        except KeyError:
+            if backup.remote_host == 'localhost':
+                pass
+            else:
+                err_count += 1
+                msg += '[ERROR] remote_login not specified for backup: ' + key + '\n'
+        try:
+            backup.remote_file = backup_config[key]['remote_file']
+        except KeyError:
+            err_count += 1
+            msg += '[ERROR] remote_file not specified for backup: ' + key + '\n'
+        try:
+            v_r = validator.target_file(backup_config[key]['target_file'])
+            if v_r.result:
+                backup.target_file = v_r.value
+            else:
+                err_count += 1
+                msg += v_r.message + '\n'
+        except KeyError:
+            err_count += 1
+            msg += '[ERROR] target_file not specified for backup: ' + key + '\n'
+        try:
+            v_r = validator.versions(backup_config[key]['versions'])
+            if v_r.result:
+                backup.versions = v_r.value
+            else:
+                err_count += 1
+                msg += v_r.message + '\n'
+        except KeyError:
+            pass
 
-    # TODO finalize the functionality here!!
+        backup.target_folder = backup.name
 
-    return err_count, msg, conf, backups
+        all_backups[backup.name] = backup
 
-    # End of def validate_config_file_parameters(conf, backups)
+
+    return err_count, msg, all_backups
+    # End of def read_backupconfig_section(backup_config)
+
 
 def select_for_processing(cmdback, allback):
     '''Select the backups to be processed based on cmdline arguments.'''
@@ -525,7 +502,7 @@ def run_local_backup(backup, path, log, test):
     log.write('Starting to process localhost ' + backup.name + ' : ' + backup.remote_file, 'I')
 
     # Construct the read command
-    readcmd = '/usr/bin/sudo /usr/bin/dd if='+ backup.remote_file + ' bs=' + backup.block_size
+    readcmd = '/usr/bin/sudo /usr/bin/dd if='+ backup.remote_file + ' bs=4M'
 
     log.write(backup.name + ' read command:', 'D')
     log.write(readcmd, 'D')
@@ -607,7 +584,7 @@ def run_remote_backup(backup, path, log, test):
 
     # Construct the "reading" part of the dd + gzip command
     readcmd = '/usr/bin/ssh ' + backup.remote_login + '@' + backup.remote_host \
-        + ' "/usr/bin/sudo /usr/bin/dd if='+ backup.remote_file + ' bs=' + backup.block_size \
+        + ' "/usr/bin/sudo /usr/bin/dd if='+ backup.remote_file + ' bs=64k' \
         + ' | /usr/bin/gzip -4 -"'
 
     log.write(backup.name + ' read command:', 'D')
@@ -619,7 +596,7 @@ def run_remote_backup(backup, path, log, test):
     target_file_tmp = path + '/' + timestamp + backup.target_file + '._tmp'
 
     # Construct the write part of overall dd-command.
-    writecmd = '/usr/bin/dd of=' + target_file_tmp + ' bs=' + backup.block_size
+    writecmd = '/usr/bin/dd of=' + target_file_tmp + ' bs=64k'
 
     log.write(backup.name + ' write command:', 'D')
     log.write(writecmd, 'D')
