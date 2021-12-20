@@ -31,9 +31,8 @@ from yaml.scanner import ScannerError
 ## Own modules                                                               ##
 ###############################################################################
 from helpers import Logger
-from helpers import CmdArguments
 from helpers import validator
-from helpers.clonerclasses import Backup, ConfigFile
+from helpers.clonerclasses import Backup, ConfigFile, CmdlineArguments
 
 ###############################################################################
 ## My own custom classes                                                     ##
@@ -93,52 +92,52 @@ def main(args):
     '''Main function to execute the code'''
 
     # Error count and message; used throughout the code.
-    e_cnt = 0
-    e_msg = ''
+    err_count = 0
+    err_msg = ''
 
     # Parse and validate arguments (from command line), if any
-    e_cnt, e_msg, cmd_args = parse_cmd_arguments(args)
-    if e_cnt > 0:
-        sys.exit(e_msg)
+    err_count, err_msg, cmdline_arguments = parse_cmdline_arguments(args)
+    if err_count > 0:
+        sys.exit(err_msg)
 
     # Read and parse the configuration file
-    if cmd_args.conf_file is None:
+    if cmdline_arguments.conf_file is None:
         v_r = validator.file_read(CONFIG_FILE_PATH)
         if v_r.result:
-            e_cnt, e_msg, conf, all_backups = parse_config_file(v_r.value)
+            err_count, err_msg, configuration, all_backups = parse_config_file(v_r.value)
         else:
             sys.exit(v_r.message)
     else:
-        e_cnt, e_msg, conf, all_backups = parse_config_file(cmd_args.conf_file)
+        err_count, err_msg, configuration, all_backups = parse_config_file(cmdline_arguments.conf_file)
 
     # End execution if errors in parsing config file
-    if e_cnt > 0:
+    if err_count > 0:
         print('Errors in parsing the configuration file:\n')
-        print(e_msg)
+        print(err_msg)
         sys.exit(1)
 
     # If run as configtest, end process here
-    if cmd_args.configtest:
+    if cmdline_arguments.configtest:
         print('Config file content seems to be OK!')
         sys.exit(0)
 
     # Set up logging
     log = None
     my_log = None
-    if cmd_args.test:
+    if cmdline_arguments.test:
         log = Logger(os.devnull, True)
         my_log = LogWriter(log, 0, True, True)
     else:
-        log = Logger(conf.log_file, cmd_args.verbose)
-        my_log = LogWriter(log, conf.log_level, conf.is_log_written, False)
+        log = Logger(configuration.log_file, cmdline_arguments.verbose)
+        my_log = LogWriter(log, configuration.log_level, configuration.is_log_written, False)
 
     my_log.write('All arguments and parameters parsed successfully, found ' \
         + str(len(all_backups)) + ' backups from config file', 'D')
 
     my_log.write('Command line arguments are:', 'D')
-    my_log.write(str(cmd_args), 'D')
+    my_log.write(str(cmdline_arguments), 'D')
     my_log.write('Configuration parameters are:', 'D')
-    my_log.write(str(conf), 'D')
+    my_log.write(str(configuration), 'D')
     my_log.write('Backups and parameters are:', 'D')
     my_log.write(str(all_backups), 'D')
 
@@ -148,50 +147,49 @@ def main(args):
 
     # Compare the command line arguments with config file backups
     backups_to_process = {}
-    if len(cmd_args.backup_names) > 0:
-        e_cnt, e_msg, backups_to_process = select_for_processing(cmd_args.backup_names, all_backups)
+    if len(cmdline_arguments.backup_names) > 0:
+        err_count, err_msg, backups_to_process = select_for_processing(cmdline_arguments.backup_names, all_backups)
     else:
         backups_to_process = all_backups
 
-    if e_cnt > 0:
-        my_log.write(e_msg, 'E')
-        print(e_msg)
-        return
+    if err_count > 0:
+        my_log.write(err_msg, 'E')
+        print(err_msg)
+        sys.exit(1)
 
     my_log.write(str(len(backups_to_process)) + ' backups to be processed', 'I')
 
-
     # If target_folder is given from command line, then replace it for all backups to be processed
-    if cmd_args.target_folder is not None:
-        backups_to_process = replace_target_folder(backups_to_process, cmd_args.target_folder)
-
-    # TODO Fix below, only the backup specific folder should be created, not the path before it
+    if cmdline_arguments.target_folder is not None:
+        backups_to_process = replace_target_folder(backups_to_process, cmdline_arguments.target_folder)
 
     # Process through the selected backups
     for key, backup in backups_to_process.items():
         # Check if the backup-specific folder exists, if not create
-        e_cnt, e_msg, path = prepare_path(conf.root_folder,
-            backup.target_folder,
+        err_count, err_msg = check_and_create_folder(backup.target_folder,
             my_log,
-            cmd_args.test)
-        if  e_cnt > 0:
-            my_log.write(key + ': ' + e_msg, 'E')
-            print(e_msg)
-            return
-        # Run the backup
-        e_cnt, e_msg = run_backup(backup, path, my_log, cmd_args.test)
-        if e_cnt > 0:
-            my_log.write(key + ': ' + e_msg, 'E')
-            print(e_msg)
-            return
+            cmdline_arguments.test)
+        if  err_count > 0:
+            my_log.write(key + ': ' + err_msg, 'E')
+            print(err_msg)
+            sys.exit(0)
 
-    # TODO Loop through all backups, and remove those which exceed the allowed count
+        # Run the backup
+        err_count, err_msg = run_backup(backup, my_log, cmdline_arguments.test)
+        if err_count > 0:
+            my_log.write(key + ': ' + err_msg, 'E')
+            print(err_msg)
+            sys.exit(0)
+
+        # Delete too old versions, if any
+        if cmdline_arguments.delete_old_versions:
+            delete_old_versions(backup, my_log, cmdline_arguments.test)
 
     # End of def main(args)
 
 
 
-def parse_cmd_arguments(arg):
+def parse_cmdline_arguments(arg):
     '''Parse and validate command line arguments and return CmdArguments object'''
 
     usage = 'Usage: sshimagecloner [-h | --help] [-t | --test] [-v] \n' \
@@ -199,16 +197,16 @@ def parse_cmd_arguments(arg):
         + '[backupname_1] [backupname_2] [backupname...n]'
 
     err_count = 0
-    msg = ''
+    err_msg = ''
 
     # Try to read the options and arguments from command line input
     try:
         opts, args = getopt.getopt(arg, 'htc:f:v', ['help', 'test', 'conffile=', 'folder='])
     except getopt.GetoptError:
         err_count += 1
-        msg += '[ERROR] Could not parse command line options, possibly unrecognized option\n'
-        msg += usage
-        return err_count, msg, None
+        err_msg += '[ERROR] Could not parse command line options, possibly unrecognized option\n'
+        err_msg += usage
+        return err_count, err_msg, None
 
     # Check if asked for help, pring usage and exit
     for opt, val in opts:
@@ -217,7 +215,7 @@ def parse_cmd_arguments(arg):
             sys.exit(0)
 
     # Process the options given.
-    cmdargs = CmdArguments()
+    cmdargs = CmdlineArguments()
 
     for opt, val in opts:
         if opt == '-v':
@@ -228,19 +226,20 @@ def parse_cmd_arguments(arg):
                 cmdargs.conf_file = v_r.value
             else:
                 err_count +=1
-                msg += v_r.message + '\n'
+                err_msg += v_r.message + '\n'
         elif opt in ('-f', '--folder'):
             v_r = validator.folder_write(val)
             if v_r.result:
                 cmdargs.target_folder = v_r.value
+                cmdargs.delete_old_versions = True
             else:
                 err_count +=1
-                msg += v_r.message + '\n'
+                err_msg += v_r.message + '\n'
         elif opt in ('-t', '--test'):
             cmdargs.test = True
         else:
             err_count += 1
-            msg += 'Unrecognized option'
+            err_msg += 'Unrecognized option'
 
     # Process the arguments given.
     for val in args:
@@ -249,7 +248,7 @@ def parse_cmd_arguments(arg):
         else:
             cmdargs.backup_names[val] = val
 
-    return err_count, msg, cmdargs
+    return err_count, err_msg, cmdargs
 
     # End of def parse_cmd_arguments(arg)
 
@@ -277,7 +276,7 @@ def parse_config_file(path):
         err_count += 1
         msg += '[ERROR] general -section is missing from config file\n'
 
-    e_c, e_m, conf = read_generalconfig_section(general_config)
+    e_c, e_m, general_config = read_generalconfig_section(general_config)
 
     err_count += e_c
     msg += e_m
@@ -295,12 +294,12 @@ def parse_config_file(path):
         err_count += 1
         msg += '[ERROR] No backups specified in config file\n'
 
-    e_c, e_m, all_backups = read_backupconfig_section(backup_config)
+    e_c, e_m, all_backups = read_backupconfig_section(backup_config, general_config.root_folder)
 
     err_count += e_c
     msg += e_m
 
-    return err_count, msg, conf, all_backups
+    return err_count, msg, general_config, all_backups
     # End of def parse_config_file(path)
 
 
@@ -344,7 +343,7 @@ def read_generalconfig_section(general_config):
 
     # End of read_generalconfig_section(general_config)
 
-def read_backupconfig_section(backup_config):
+def read_backupconfig_section(backup_config, root_folder):
     '''Read the backups section from the configuration yaml dict'''
 
     all_backups = {}
@@ -411,7 +410,8 @@ def read_backupconfig_section(backup_config):
         except KeyError:
             pass
 
-        backup.target_folder = backup.name
+
+        backup.target_folder = root_folder + '/' + backup.name
 
         all_backups[backup.name] = backup
 
@@ -420,84 +420,79 @@ def read_backupconfig_section(backup_config):
     # End of def read_backupconfig_section(backup_config)
 
 
-def select_for_processing(cmdback, allback):
+def select_for_processing(cmdline_backups, all_backups):
     '''Select the backups to be processed based on cmdline arguments.'''
     err_count = 0
-    msg = ''
+    err_msg = ''
     backups_to_process = {}
-    for key in cmdback:
-        if key in allback.keys():
-            backups_to_process[key] = allback[key]
+    for key in cmdline_backups:
+        if key in all_backups.keys():
+            backups_to_process[key] = all_backups[key]
         else:
             err_count += 1
-            msg += 'Backup: ' + key + ' not found from config file, aborting\n'
+            err_msg += 'Backup: ' + key + ' not found from config file, aborting\n'
 
-    return err_count, msg, backups_to_process
+    return err_count, err_msg, backups_to_process
     # Enf of def select_for_processing(cmdback, allback)
 
 
-# Method to replace the target folder of the backups.
 def replace_target_folder(backups, folder):
-    '''Function to replace the target folder'''
+    '''Function to replace the target folder from config file with folder given from cmd line'''
 
-    for key, value in backups.items():
-        backups[key] = value._replace(target_folder = folder)
+    for key in backups.keys():
+        backups[key].target_folder = folder + '/' + key
 
     return backups
     # End of def replace_target_folder(backups, folder)
 
 
-# Method to create (if needed) the full backup path and return that.
-def prepare_path(root_path, folder, log, test):
-    '''Function to return the full backup path, and create if it does not exist'''
+def check_and_create_folder(backup_folder, log, test):
+    '''Check the path for current backup, and create backup specific folder if it does not exist'''
     err_count = 0
-    msg = ''
+    err_msg = ''
 
-    backup_folder = root_path + '/' + folder
-
-    if os.path.isdir(backup_folder):
-        return 0, '', backup_folder
-    else:
-        if os.path.exists(backup_folder):
-            err_count += 1
-            msg += 'Backup path ' + backup_folder + ' already exists, but is not a directory'
-            return err_count, msg, ''
+    # If path exists, validate it, if not, then try to create the folder
+    if os.path.exists(backup_folder):
+        v_r = validator.folder_write(backup_folder)
+        if v_r.result:
+            return 0, ''
         else:
-            try:
-                # FIXME Do not create the full structure, exit if root path does not exist!!
-                log.write('Create the full directory stucture', 'D')
-                log.write('mkdir -p' + backup_folder, 'N')
-                if not test:
-                    os.makedirs(backup_folder)
-            except PermissionError:
-                err_count += 1
-                msg += 'Cannot create folder: ' + backup_folder + ', no access rights'
-                return err_count, msg, ''
+            err_count += 1
+            err_msg += v_r.message + '\n'
+    else:
+        try:
+            log.write('Create the backup specific folder ' + backup_folder, 'D')
+            log.write('mkdir ' + backup_folder, 'N')
+            if not test:
+                os.mkdir(backup_folder)
+        except PermissionError:
+            err_count += 1
+            err_msg += 'Cannot create folder: ' + backup_folder + ', no access rights'
+            return err_count, err_msg
 
-    return err_count, msg, backup_folder
+    return err_count, err_msg
 
     # End of def prepare_path(root_path, folder, log, test)
 
-# Method to run one backup
-def run_backup(backup, path, log, test):
+
+def run_backup(backup, log, test):
     '''Function to process one backup'''
     err_count = 0
-    msg = ''
+    err_msg = ''
 
     if backup.remote_host == 'localhost':
-        err_count, msg = run_local_backup(backup, path, log, test)
+        err_count, err_msg = run_local_backup(backup, log, test)
     else:
-        err_count, msg = run_remote_backup(backup, path, log, test)
+        err_count, err_msg = run_remote_backup(backup, log, test)
 
-    return err_count, msg
+    return err_count, err_msg
     # End of def def run_backup(backup, path, log, test)
 
 
-# Method to run one local backup
-def run_local_backup(backup, path, log, test):
+def run_local_backup(backup, log, test):
     '''Function to process one backup from local machine'''
     err_count = 0
-    msg = ''
+    err_msg = ''
 
     log.write('Starting to process localhost ' + backup.name + ' : ' + backup.remote_file, 'I')
 
@@ -509,8 +504,8 @@ def run_local_backup(backup, path, log, test):
 
     # Create the target filename, full path. ._tmp -extension is used during the write
     timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S_')
-    target_file = path + '/' + timestamp + backup.target_file
-    target_file_tmp = path + '/' + timestamp + backup.target_file + '._tmp'
+    target_file = backup.target_folder + '/' + timestamp + backup.target_file
+    target_file_tmp = backup.target_folder + '/' + timestamp + backup.target_file + '._tmp'
 
     # Construct the write part of overall dd-command.
     gzipcmd = '/usr/bin/gzip -4'
@@ -519,7 +514,7 @@ def run_local_backup(backup, path, log, test):
     log.write(gzipcmd, 'D')
 
     log.write('Full copy command:', 'D')
-    log.write(readcmd + ' | ' + gzipcmd + ' > ' + target_file, 'N')
+    log.write(readcmd + ' | ' + gzipcmd + ' > ' + target_file_tmp, 'N')
 
     # Split the command line options / process commands for subprocess.Popen command
     readsplit = shlex.split(readcmd)
@@ -551,9 +546,9 @@ def run_local_backup(backup, path, log, test):
             linestoprint = readproc.stderr.readlines()
         except OSError as err:
             err_count += 1
-            msg += 'Something went wrong with the read and write processes'
+            err_msg += 'Something went wrong with the read and write processes'
             print(err)
-            return err_count, msg
+            return err_count, err_msg
 
     # Rename the target file to standard name.
     log.write('Renaming ' + target_file_tmp + ' to ' + target_file, 'D')
@@ -570,15 +565,14 @@ def run_local_backup(backup, path, log, test):
         log.write(line.decode('utf-8'), 'D')
 
 
-    return err_count, msg
+    return err_count, err_msg
     # End of def run_local_backup(backup, path, log, test)
 
 
-# Method to run one remote backup
-def run_remote_backup(backup, path, log, test):
+def run_remote_backup(backup, log, test):
     '''Function to process one backup from a remote machine.'''
     err_count = 0
-    msg = ''
+    err_msg = ''
 
     log.write('Starting to process remote host ' + backup.name + ' : ' + backup.remote_file, 'I')
 
@@ -592,8 +586,8 @@ def run_remote_backup(backup, path, log, test):
 
     # Create the target filename, full path. ._tmp -extension is used during the write
     timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S_')
-    target_file = path + '/' + timestamp + backup.target_file
-    target_file_tmp = path + '/' + timestamp + backup.target_file + '._tmp'
+    target_file = backup.target_folder + '/' + timestamp + backup.target_file
+    target_file_tmp = backup.target_folder + '/' + timestamp + backup.target_file + '._tmp'
 
     # Construct the write part of overall dd-command.
     writecmd = '/usr/bin/dd of=' + target_file_tmp + ' bs=64k'
@@ -632,9 +626,9 @@ def run_remote_backup(backup, path, log, test):
             linestoprint = readproc.stderr.readlines() + writeproc.stderr.readlines()
         except OSError as err:
             err_count += 1
-            msg += 'Something went wrong with the read and write processes'
+            err_msg += 'Something went wrong with the read and write processes'
             print(err)
-            return err_count, msg
+            return err_count, err_msg
 
     # Rename the target file to standard name.
     log.write('Renaming ' + target_file_tmp + ' to ' + target_file, 'D')
@@ -651,9 +645,32 @@ def run_remote_backup(backup, path, log, test):
         log.write(line.decode('utf-8'), 'D')
 
 
-    return err_count, msg
+    return err_count, err_msg
 
     # End of def run__remote_backup(backup, path, log, test)
+
+
+def delete_old_versions(backup, log, test):
+    '''Delete all older versions over versions count'''
+
+    log.write('Starting to delete old versions for ' + backup.name, 'D')
+    backup_files = []
+    dir_contents = os.listdir(backup.target_folder)
+    for item in dir_contents:
+        fullpath = os.path.realpath(item)
+        if os.path.isfile(fullpath) and fullpath[-1*len(backup.target_file)] == backup.target_file:
+            backup_files = fullpath
+
+    backup_files.sort()
+
+    files_to_delete = backup_files[backup.versions:]
+
+    log.write('There are ' + len(files_to_delete) + ' files to be deleted in ' + backup.target_folder, 'D')
+
+    #TODO Remove all files in the files_to_delete array, if test is False
+
+
+    # End of def delete_old_versions(backup, log, test)
 
 
 # Run the main function

@@ -95,7 +95,7 @@ def log_level(level):
 def versions(vers):
     '''Check that versions is a valid number'''
     result = False
-    
+
     if vers > 0:
         result = True
 

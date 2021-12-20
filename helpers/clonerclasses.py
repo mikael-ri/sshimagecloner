@@ -15,10 +15,11 @@ class Backup:
 
 
 @dataclass
-class CmdArguments:
+class CmdlineArguments:
     '''Class to contain command line arguments'''
     conf_file: str = None
     target_folder: str = None
+    delete_old_versions: bool = True
     verbose: bool = False
     configtest: bool = False
     backup_names: dict = field(default_factory=dict)

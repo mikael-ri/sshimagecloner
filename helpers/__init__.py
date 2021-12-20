@@ -1,6 +1,6 @@
 '''Module containing different helper scripts / functions'''
 from .clonerclasses import Backup
-from .clonerclasses import CmdArguments
+from .clonerclasses import CmdlineArguments
 from .clonerclasses import ConfigFile
 
 from .logger import Logger
