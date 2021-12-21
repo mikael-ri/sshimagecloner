@@ -13,7 +13,6 @@ from .validator import folder_write
 from .validator import remote_login
 from .validator import ip_address_or_host
 from .validator import target_file
-from .validator import block_size
 
 from .filesystemchecks import is_folder_writable
 from .filesystemchecks import folder_exists

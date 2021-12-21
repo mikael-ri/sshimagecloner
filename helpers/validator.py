@@ -20,6 +20,11 @@ class ValidatorResult:
     def __bool__(self):
         return self.result
 
+# TODO remove all references to realpath from here. Check what Path.resolve does, but it is
+# better to check if path is absolute, and if not, then concatenate appropriate folder
+# here. And this needs to be done on the caller side, because the validator
+# cannot know which is the correct parent folder
+# Write instructions in the yaml config file.
 
 def backup_name(name):
     '''Validate backup name'''
@@ -39,6 +44,7 @@ def file_read(file):
     if os.path.isfile(file):
         if os.access(file, os.R_OK):
             value = os.path.realpath(file)
+            print('FIR ' + value)
         else:
             message = 'File ' + file + ' cannot be read, no access'
             result = False
@@ -56,6 +62,7 @@ def file_write(file):
     if os.path.isfile(file):
         if os.access(file, os.W_OK):
             value = os.path.realpath(file)
+            print('FIW ' + value)
         else:
             message = 'File ' + file + ' cannot be read, no access'
             result = False
@@ -73,6 +80,7 @@ def folder_write(folder):
     if os.path.isdir(folder):
         if os.access(folder, os.W_OK):
             value = os.path.realpath(folder)
+            print('FOW ' + value)
         else:
             message = 'Folder ' + folder + ' cannot be written into'
             result = False
@@ -138,11 +146,3 @@ def target_file(name):
         'and can only contain a-z A-Z 0-9 . - _ and cannot end with .'
 
     return ValidatorResult(bool(pat.match(name)), name, msg)
-
-def block_size(blocksize):
-    '''Validate block size'''
-    pat = re.compile(r'll')
-
-    msg = 'Must be valid dd-commands block size'
-
-    return ValidatorResult(bool(pat.match(blocksize)), blocksize, msg)

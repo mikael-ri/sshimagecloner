@@ -91,6 +91,8 @@ CONFIG_FILE_PATH = './sshimagecloner.yaml'
 def main(args):
     '''Main function to execute the code'''
 
+    # TODO Fix all places where validator is called, so that the correct path is used.
+
     # Error count and message; used throughout the code.
     err_count = 0
     err_msg = ''
@@ -108,7 +110,8 @@ def main(args):
         else:
             sys.exit(v_r.message)
     else:
-        err_count, err_msg, configuration, all_backups = parse_config_file(cmdline_arguments.conf_file)
+        err_count, err_msg, configuration, all_backups = parse_config_file(
+            cmdline_arguments.conf_file)
 
     # End execution if errors in parsing config file
     if err_count > 0:
@@ -148,7 +151,9 @@ def main(args):
     # Compare the command line arguments with config file backups
     backups_to_process = {}
     if len(cmdline_arguments.backup_names) > 0:
-        err_count, err_msg, backups_to_process = select_for_processing(cmdline_arguments.backup_names, all_backups)
+        err_count, err_msg, backups_to_process = select_for_processing(
+            cmdline_arguments.backup_names,
+            all_backups)
     else:
         backups_to_process = all_backups
 
@@ -161,7 +166,9 @@ def main(args):
 
     # If target_folder is given from command line, then replace it for all backups to be processed
     if cmdline_arguments.target_folder is not None:
-        backups_to_process = replace_target_folder(backups_to_process, cmdline_arguments.target_folder)
+        backups_to_process = replace_target_folder(
+            backups_to_process,
+            cmdline_arguments.target_folder)
 
     # Process through the selected backups
     for key, backup in backups_to_process.items():
@@ -228,6 +235,9 @@ def parse_cmdline_arguments(arg):
                 err_count +=1
                 err_msg += v_r.message + '\n'
         elif opt in ('-f', '--folder'):
+            # TODO remove the folder validation here, and move it to be done after the config
+            # file has been read in. Check if the folder is absolute path, and if not, then
+            # concatenate the backup_root before the folder.
             v_r = validator.folder_write(val)
             if v_r.result:
                 cmdargs.target_folder = v_r.value
@@ -497,7 +507,10 @@ def run_local_backup(backup, log, test):
     log.write('Starting to process localhost ' + backup.name + ' : ' + backup.remote_file, 'I')
 
     # Construct the read command
-    readcmd = '/usr/bin/sudo /usr/bin/dd if='+ backup.remote_file + ' bs=4M'
+    #readcmd = '/usr/bin/sudo /usr/bin/dd if='+ backup.remote_file + ' bs=4M'
+
+    #TEMPORARY READCOMMAND FOR TESTINT
+    readcmd = '/usr/bin/sudo /usr/bin/dd if='+ backup.remote_file + ' bs=4M count=10'
 
     log.write(backup.name + ' read command:', 'D')
     log.write(readcmd, 'D')
@@ -557,7 +570,7 @@ def run_local_backup(backup, log, test):
         os.rename(target_file_tmp, target_file)
 
 
-    log.write(backup.name + ' : ' + backup.remote_file + ' successfully' \
+    log.write(backup.name + ' : ' + backup.remote_file + ' successfully ' \
         + 'backed up as ' + target_file, 'I')
 
     log.write('with following dd statistics', 'D')
@@ -637,7 +650,7 @@ def run_remote_backup(backup, log, test):
         os.rename(target_file_tmp, target_file)
 
 
-    log.write(backup.name + ' : ' + backup.remote_file + ' successfully' \
+    log.write(backup.name + ' : ' + backup.remote_file + ' successfully ' \
         + 'backed up as ' + target_file, 'I')
 
     log.write('with following dd statistics', 'D')
@@ -653,22 +666,37 @@ def run_remote_backup(backup, log, test):
 def delete_old_versions(backup, log, test):
     '''Delete all older versions over versions count'''
 
+    err_count = 0
+    err_msg = ''
+
     log.write('Starting to delete old versions for ' + backup.name, 'D')
     backup_files = []
     dir_contents = os.listdir(backup.target_folder)
+    # loop through all items, discard folders and only keep file matching the backup filename
     for item in dir_contents:
-        fullpath = os.path.realpath(item)
-        if os.path.isfile(fullpath) and fullpath[-1*len(backup.target_file)] == backup.target_file:
-            backup_files = fullpath
+        fullpath = backup.target_folder + '/' + item
+        if os.path.isfile(fullpath) and fullpath[-1*len(backup.target_file):] == backup.target_file:
+            backup_files.append(fullpath)
 
-    backup_files.sort()
+    backup_files.sort(reverse=True)
 
+    # Select files for deletion, where the index is larger than backup versions
     files_to_delete = backup_files[backup.versions:]
 
-    log.write('There are ' + len(files_to_delete) + ' files to be deleted in ' + backup.target_folder, 'D')
+    log.write('There are ' + str(len(files_to_delete)) + ' files to be deleted in ' \
+        + backup.target_folder, 'D')
 
-    #TODO Remove all files in the files_to_delete array, if test is False
+    for file_to_delete in files_to_delete:
+        log.write('Removing file: ' + file_to_delete, 'D')
+        log.write('rm ' + file_to_delete, 'N')
+        if not test:
+            try:
+                os.remove(file_to_delete)
+            except PermissionError:
+                err_count += 1
+                err_msg += 'Can not remove file ' + file_to_delete + ' - Permission Error'
 
+    return err_count, err_msg
 
     # End of def delete_old_versions(backup, log, test)
 
