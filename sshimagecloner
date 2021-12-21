@@ -179,18 +179,22 @@ def main(args):
         if  err_count > 0:
             my_log.write(key + ': ' + err_msg, 'E')
             print(err_msg)
-            sys.exit(0)
+            sys.exit(1)
 
         # Run the backup
         err_count, err_msg = run_backup(backup, my_log, cmdline_arguments.test)
         if err_count > 0:
             my_log.write(key + ': ' + err_msg, 'E')
             print(err_msg)
-            sys.exit(0)
+            sys.exit(1)
 
         # Delete too old versions, if any
         if cmdline_arguments.delete_old_versions:
-            delete_old_versions(backup, my_log, cmdline_arguments.test)
+            err_count, err_msg = delete_old_versions(backup, my_log, cmdline_arguments.test)
+            if err_count > 0:
+                my_log.write('Error in deleting files ' + err_msg, 'E')
+                print(err_msg)
+                sys.exit((1))
 
     # End of def main(args)
 
