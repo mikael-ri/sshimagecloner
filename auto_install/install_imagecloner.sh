@@ -11,7 +11,9 @@ SSHIMAGECLONER_CONFIG_FILE="/etc/sshimagecloner/sshimagecloner.yaml"
 SSHIMAGECLONER_LOGROTATE_FILE="/etc/logrotate.d/sshimagecloner"
 
 sudo apt update
-sudo apt install git python3-pip -y
+sudo apt install python3 python3-pip git -y
+
+SSHIMAGECLONER_PYTHON_MODULE_DIR=$(python3 -m site --user-site)
 
 # Create temp directory, and change working directory there
 [ ! -d $SSHIMAGECLONER_TMP_DIR ] && sudo mkdir $SSHIMAGECLONER_TMP_DIR
@@ -28,6 +30,10 @@ sudo cp sshimagecloner/auto_install/sshimagecloner_example.yaml $SSHIMAGECLONER_
 
 # Copy the logrotate file
 sudo cp sshimagecloner/auto_install/logrotate.d/sshimagecloner $SSHIMAGECLONER_LOGROTATE_FILE
+
+# Copy the dependent module to the module directory
+mkdir -p $SSHIMAGECLONER_PYTHON_MODULE_DIR
+cp -R sshimagecloner/sic_helpers $SSHIMAGECLONER_PYTHON_MODULE_DIR
 
 # Copy the main script and make sure it is executable
 sudo cp sshimagecloner/sshimagecloner $SSHIMAGECLONER_EXECUTABLE_FILE
