@@ -29,9 +29,9 @@ from yaml.scanner import ScannerError
 ###################################################################################################
 ## Own modules                                                                                   ##
 ###################################################################################################
-from helpers.clonerclasses import Backup, ConfigFile, CmdlineArguments
-from helpers import Logger
-from helpers import validator
+from sic_helpers.clonerclasses import Backup, ConfigFile, CmdlineArguments
+from sic_helpers import Logger
+from sic_helpers import validator
 
 ###################################################################################################
 ## My own custom classes                                                                         ##
@@ -81,7 +81,7 @@ class LogWriter:
 
 # If the CONFIG_FILE_NAME is relative, it is assumed to be relative to folder of this script.
 # If you want to move the config files location, change this parameter below.
-CONFIG_FILE_NAME = 'sshimagecloner.yaml'
+CONFIG_FILE_NAME = '/etc/sshimagecloner/sshimagecloner.yaml'
 
 
 # Base directory, for this this executable script.
