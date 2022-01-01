@@ -696,7 +696,7 @@ def delete_old_versions(backup, log, test):
     backup_files = []
     # loop through all items, discard folders and only keep file matching the backup filename
     if test and not backup.target_folder.exists():
-        log.write('The target folder does not exist yet, deletion can not be tested.')
+        log.write('!!! The target folder does not exist yet, deletion can not be tested. !!!')
     else:
         for item in backup.target_folder.iterdir():
             if item.is_file() and item.match('*_'+backup.target_file_name):
