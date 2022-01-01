@@ -12,7 +12,7 @@ general:
   
   # Log file. If commented out, then no log is written.
   # Log file path must be absolute or relative to the sshimagecloner script
-  log_file: /var/log/sshimagecloner
+  log_file: /var/log/sshimagecloner.log
   
   # How much log is written
   # 0 = absolute minimum, 1 = normal info, 2 = debug
