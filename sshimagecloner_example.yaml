@@ -1,25 +1,27 @@
-###############################################################################
-##                            ssh image cloner                               ##
-##                                                                           ##
-## NB! Folders must not have a trailing slash!                               ##
-##                                                                           ##
-## NB! Please make sure that the intendation stays correct and not tampered  ##
-## with, and that it complies with yaml-specifications                       ##
-###############################################################################
+###################################################################################################
+##                                       ssh image cloner                                        ##
+##                                                                                               ##
+## NB! Folders must not have a trailing slash!                                                   ##
+##                                                                                               ##
+## NB! Please make sure that the intendation stays correct and not tampered with, and that it    ##
+## complies with yaml-specifications                                                             ##
+###################################################################################################
 
 # General settings for the program
 general:
   
   # Log file. If commented out, then no log is written.
+  # Log file path must be absolute or relative to the sshimagecloner script
   log_file: /var/log/sshimagecloner
   
   # How much log is written
   # 0 = absolute minimum, 1 = normal info, 2 = debug
+  # default = 0
   log_level: 1
   
-  # Root folder where the backups are stored.
-  # All paths should be in relation to this.
-  # NB! This folder must exist
+  # Root folder where the backups are stored. All backups will be under this folder.
+  # Root folder path must be absolute or relative to the sshimagecloner script
+  # NB! This folder must exist!
   backup_root_folder: /backups
   
 # backups to be run
@@ -29,11 +31,11 @@ backups:
 
   #Example configuration
   # "Your name for the backup":
-  #   remote_login: "username to log in to the host"
-  #   remote_host: "ip or dns name for the host where to backup, use localhost for localhost
+  #   remote_login: "username to log in to the host, optional / not used if host = localhost"
+  #   remote_host: "ip or dns name for the host where to backup, use localhost for localhost"
   #   remote_file: "disk to clone, for RPi usually /dev/mmcblk0"
   #   target_file: "filename of the backup image"
-  #   versions: number of versions to be stored of each image
+  #   versions: number of versions to be stored of each image, default = 5
 
   RPi_1:
     remote_login: backup_user

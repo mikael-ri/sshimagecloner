@@ -1,46 +1,45 @@
 #!/usr/bin/python3
 '''ssh image cloner, to clone images from remote host over ssh'''
 
-###############################################################################
-##                             ssh image cloner                              ##
-##                                                                           ##
-## Python program to clone images from remote host over ssh                  ##
-## Author: mikali-ri                                                         ##
-## Created: 2021-11-01                                                       ##
-## License: GNU General Public License v3                                    ##
-##                                                                           ##
-###############################################################################
+###################################################################################################
+##                                      ssh image cloner                                         ##
+##                                                                                               ##
+## Python program to clone images from remote host over ssh                                      ##
+## Author: mikali-ri                                                                             ##
+## Created: 2021-11-01                                                                           ##
+## License: GNU General Public License v3                                                        ##
+## Version: 1.0, committed 1.1.2022                                                              ##
+###################################################################################################
 
 
-###############################################################################
-## Imports                                                                   ##
-###############################################################################
-import os
-import sys
-import codecs
+###################################################################################################
+## Imports                                                                                       ##
+###################################################################################################
 import datetime
 import getopt
-import subprocess
+import os
+from pathlib import Path
 import shlex
+import subprocess
+import sys
 import yaml
+
 from yaml.scanner import ScannerError
 
-
-
-###############################################################################
-## Own modules                                                               ##
-###############################################################################
+###################################################################################################
+## Own modules                                                                                   ##
+###################################################################################################
+from helpers.clonerclasses import Backup, ConfigFile, CmdlineArguments
 from helpers import Logger
 from helpers import validator
-from helpers.clonerclasses import Backup, ConfigFile, CmdlineArguments
 
-###############################################################################
-## My own custom classes                                                     ##
-###############################################################################
+###################################################################################################
+## My own custom classes                                                                         ##
+###################################################################################################
 
-#------------------------------------------------------------------------------
+#--------------------------------------------------------------------------------------------------
 # Class for writing the logs, this handles the log levels etc.
-#------------------------------------------------------------------------------
+#--------------------------------------------------------------------------------------------------
 class LogWriter:
     '''A simple class to handle the verbosity and log writing'''
 
@@ -76,22 +75,31 @@ class LogWriter:
         return
 
 
-###############################################################################
-## Constants                                                                 ##
-###############################################################################
+###################################################################################################
+## Constants                                                                                     ##
+###################################################################################################
 
-# config file is expected to be in the working directory
-CONFIG_FILE_PATH = './sshimagecloner.yaml'
+# If the CONFIG_FILE_NAME is relative, it is assumed to be relative to folder of this script.
+# If you want to move the config files location, change this parameter below.
+CONFIG_FILE_NAME = 'sshimagecloner.yaml'
 
 
-###############################################################################
-## Main executable code                                                      ##
-###############################################################################
+# Base directory, for this this executable script.
+BASE_DIR = Path(os.path.dirname(os.path.realpath((__file__))))
+# Current working directory, when the script is run
+CURRENT_DIR = Path(os.getcwd())
+# Path object for the config file.
+CONFIG_FILE_PATH = Path(CONFIG_FILE_NAME)
+if not CONFIG_FILE_PATH.is_absolute():
+    CONFIG_FILE_PATH = BASE_DIR.joinpath(CONFIG_FILE_PATH)
+
+
+###################################################################################################
+## Main executable code                                                                          ##
+###################################################################################################
 
 def main(args):
     '''Main function to execute the code'''
-
-    # TODO Fix all places where validator is called, so that the correct path is used.
 
     # Error count and message; used throughout the code.
     err_count = 0
@@ -106,7 +114,7 @@ def main(args):
     if cmdline_arguments.conf_file is None:
         v_r = validator.file_read(CONFIG_FILE_PATH)
         if v_r.result:
-            err_count, err_msg, configuration, all_backups = parse_config_file(v_r.value)
+            err_count, err_msg, configuration, all_backups = parse_config_file(CONFIG_FILE_PATH)
         else:
             sys.exit(v_r.message)
     else:
@@ -116,8 +124,22 @@ def main(args):
     # End execution if errors in parsing config file
     if err_count > 0:
         print('Errors in parsing the configuration file:\n')
-        print(err_msg)
-        sys.exit(1)
+        sys.exit(err_msg)
+
+    # If there was a target folder given as an argument from cmdline, we must validate it, and
+    # validation can only be done after the config file is read.
+    if cmdline_arguments.target_folder is not None:
+        if cmdline_arguments.target_folder.is_absolute():
+            sys.exit('Target folder cannot be absolute path, ' \
+                'it must be relative to the backup_root_folder')
+        else:
+            cmdline_arguments.target_folder = configuration.root_folder.joinpath(
+                cmdline_arguments.target_folder)
+        v_r = validator.folder_write(cmdline_arguments.target_folder)
+        if v_r.result:
+            pass
+        else:
+            sys.exit(v_r.message)
 
     # If run as configtest, end process here
     if cmdline_arguments.configtest:
@@ -159,8 +181,7 @@ def main(args):
 
     if err_count > 0:
         my_log.write(err_msg, 'E')
-        print(err_msg)
-        sys.exit(1)
+        sys.exit(err_msg)
 
     my_log.write(str(len(backups_to_process)) + ' backups to be processed', 'I')
 
@@ -178,23 +199,20 @@ def main(args):
             cmdline_arguments.test)
         if  err_count > 0:
             my_log.write(key + ': ' + err_msg, 'E')
-            print(err_msg)
-            sys.exit(1)
+            sys.exit(err_msg)
 
         # Run the backup
         err_count, err_msg = run_backup(backup, my_log, cmdline_arguments.test)
         if err_count > 0:
             my_log.write(key + ': ' + err_msg, 'E')
-            print(err_msg)
-            sys.exit(1)
+            sys.exit(err_msg)
 
         # Delete too old versions, if any
         if cmdline_arguments.delete_old_versions:
             err_count, err_msg = delete_old_versions(backup, my_log, cmdline_arguments.test)
             if err_count > 0:
                 my_log.write('Error in deleting files ' + err_msg, 'E')
-                print(err_msg)
-                sys.exit((1))
+                sys.exit(err_msg)
 
     # End of def main(args)
 
@@ -232,23 +250,18 @@ def parse_cmdline_arguments(arg):
         if opt == '-v':
             cmdargs.verbose = True
         elif opt in ('-c', '--conffile'):
-            v_r = validator.file_read(val)
+            conf_file = Path(val)
+            if not conf_file.is_absolute():
+                conf_file = CURRENT_DIR.joinpath(conf_file)
+            v_r = validator.file_read(conf_file)
             if v_r.result:
-                cmdargs.conf_file = v_r.value
+                cmdargs.conf_file = conf_file
             else:
-                err_count +=1
+                err_count += 1
                 err_msg += v_r.message + '\n'
         elif opt in ('-f', '--folder'):
-            # TODO remove the folder validation here, and move it to be done after the config
-            # file has been read in. Check if the folder is absolute path, and if not, then
-            # concatenate the backup_root before the folder.
-            v_r = validator.folder_write(val)
-            if v_r.result:
-                cmdargs.target_folder = v_r.value
-                cmdargs.delete_old_versions = True
-            else:
-                err_count +=1
-                err_msg += v_r.message + '\n'
+            cmdargs.target_folder = Path(val)
+            cmdargs.delete_old_versions = False
         elif opt in ('-t', '--test'):
             cmdargs.test = True
         else:
@@ -276,7 +289,7 @@ def parse_config_file(path):
 
     # Try to read the config file, exit if it foes not work
     try:
-        with codecs.open(path, 'r', 'utf-8') as config_file:
+        with path.open(mode='r', encoding='utf-8') as config_file:
             yaml_conf = yaml.load(config_file, Loader=yaml.FullLoader)
     except ScannerError:
         sys.exit('ERROR! Configuration file could not be read in, check yaml syntax')
@@ -326,10 +339,13 @@ def read_generalconfig_section(general_config):
 
     #Check through all the parameters needed.
     if 'log_file' in general_config:
-        v_r = validator.file_write(general_config['log_file'])
+        log_file = Path(general_config['log_file'])
+        if not log_file.is_absolute():
+            log_file = BASE_DIR.joinpath(log_file)
+        v_r = validator.log_file(log_file)
         if v_r.result:
             conf.is_log_written = True
-            conf.log_file = v_r.value
+            conf.log_file = log_file
         else:
             err_count += 1
             msg += v_r.message + '\n'
@@ -337,15 +353,18 @@ def read_generalconfig_section(general_config):
     if 'log_level' in general_config:
         v_r = validator.log_level(general_config['log_level'])
         if v_r.result:
-            conf.log_level = v_r.value
+            conf.log_level = general_config['log_level']
         else:
             err_count += 1
             msg += v_r.message + '\n'
 
     if 'backup_root_folder' in general_config:
-        v_r = validator.folder_write(general_config['backup_root_folder'])
+        backup_root = Path(general_config['backup_root_folder'])
+        if not backup_root.is_absolute():
+            backup_root = BASE_DIR.joinpath(backup_root)
+        v_r = validator.folder_write(backup_root)
         if v_r.result:
-            conf.root_folder = v_r.value
+            conf.root_folder = backup_root
         else:
             err_count += 1
             msg += v_r.message + '\n'
@@ -379,7 +398,7 @@ def read_backupconfig_section(backup_config, root_folder):
         try:
             v_r = validator.ip_address_or_host(backup_config[key]['remote_host'])
             if v_r.result:
-                backup.remote_host = v_r.value
+                backup.remote_host = backup_config[key]['remote_host']
             else:
                 err_count += 1
                 msg += v_r.message + '\n'
@@ -389,7 +408,7 @@ def read_backupconfig_section(backup_config, root_folder):
         try:
             v_r = validator.remote_login(backup_config[key]['remote_login'])
             if v_r.result:
-                backup.remote_login = v_r.value
+                backup.remote_login = backup_config[key]['remote_login']
             else:
                 err_count += 1
                 msg += v_r.message + '\n'
@@ -407,7 +426,7 @@ def read_backupconfig_section(backup_config, root_folder):
         try:
             v_r = validator.target_file(backup_config[key]['target_file'])
             if v_r.result:
-                backup.target_file = v_r.value
+                backup.target_file_name = backup_config[key]['target_file']
             else:
                 err_count += 1
                 msg += v_r.message + '\n'
@@ -417,7 +436,7 @@ def read_backupconfig_section(backup_config, root_folder):
         try:
             v_r = validator.versions(backup_config[key]['versions'])
             if v_r.result:
-                backup.versions = v_r.value
+                backup.versions = backup_config[key]['versions']
             else:
                 err_count += 1
                 msg += v_r.message + '\n'
@@ -425,7 +444,7 @@ def read_backupconfig_section(backup_config, root_folder):
             pass
 
 
-        backup.target_folder = root_folder + '/' + backup.name
+        backup.target_folder = root_folder.joinpath(Path(backup.name))
 
         all_backups[backup.name] = backup
 
@@ -454,7 +473,7 @@ def replace_target_folder(backups, folder):
     '''Function to replace the target folder from config file with folder given from cmd line'''
 
     for key in backups.keys():
-        backups[key].target_folder = folder + '/' + key
+        backups[key].target_folder = folder.joinpath(Path(key))
 
     return backups
     # End of def replace_target_folder(backups, folder)
@@ -466,7 +485,7 @@ def check_and_create_folder(backup_folder, log, test):
     err_msg = ''
 
     # If path exists, validate it, if not, then try to create the folder
-    if os.path.exists(backup_folder):
+    if backup_folder.exists():
         v_r = validator.folder_write(backup_folder)
         if v_r.result:
             return 0, ''
@@ -475,13 +494,13 @@ def check_and_create_folder(backup_folder, log, test):
             err_msg += v_r.message + '\n'
     else:
         try:
-            log.write('Create the backup specific folder ' + backup_folder, 'D')
-            log.write('mkdir ' + backup_folder, 'N')
+            log.write('Create the backup specific folder ' + str(backup_folder), 'D')
+            log.write('mkdir ' + str(backup_folder), 'N')
             if not test:
-                os.mkdir(backup_folder)
+                backup_folder.mkdir()
         except PermissionError:
             err_count += 1
-            err_msg += 'Cannot create folder: ' + backup_folder + ', no access rights'
+            err_msg += 'Cannot create folder: ' + str(backup_folder) + ', no access rights'
             return err_count, err_msg
 
     return err_count, err_msg
@@ -513,7 +532,7 @@ def run_local_backup(backup, log, test):
     # Construct the read command
     #readcmd = '/usr/bin/sudo /usr/bin/dd if='+ backup.remote_file + ' bs=4M'
 
-    #TEMPORARY READCOMMAND FOR TESTINT
+    #TEMPORARY READCOMMAND FOR TESTING
     readcmd = '/usr/bin/sudo /usr/bin/dd if='+ backup.remote_file + ' bs=4M count=10'
 
     log.write(backup.name + ' read command:', 'D')
@@ -521,8 +540,9 @@ def run_local_backup(backup, log, test):
 
     # Create the target filename, full path. ._tmp -extension is used during the write
     timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S_')
-    target_file = backup.target_folder + '/' + timestamp + backup.target_file
-    target_file_tmp = backup.target_folder + '/' + timestamp + backup.target_file + '._tmp'
+    target_file = backup.target_folder.joinpath(Path(timestamp + backup.target_file_name))
+    target_file_tmp = backup.target_folder.joinpath(
+        Path(timestamp + backup.target_file_name + '._tmp'))
 
     # Construct the write part of overall dd-command.
     gzipcmd = '/usr/bin/gzip -4'
@@ -531,7 +551,7 @@ def run_local_backup(backup, log, test):
     log.write(gzipcmd, 'D')
 
     log.write('Full copy command:', 'D')
-    log.write(readcmd + ' | ' + gzipcmd + ' > ' + target_file_tmp, 'N')
+    log.write(readcmd + ' | ' + gzipcmd + ' > ' + str(target_file_tmp), 'N')
 
     # Split the command line options / process commands for subprocess.Popen command
     readsplit = shlex.split(readcmd)
@@ -542,7 +562,7 @@ def run_local_backup(backup, log, test):
     linestoprint = []
     if not test:
         try:
-            outputfile = open(target_file_tmp, 'wb')
+            outputfile = target_file_tmp.open(mode='wb')
             # Start the process providing the read stream
             readproc = subprocess.Popen(readsplit,
             stdin=subprocess.PIPE,
@@ -564,18 +584,17 @@ def run_local_backup(backup, log, test):
         except OSError as err:
             err_count += 1
             err_msg += 'Something went wrong with the read and write processes'
-            print(err)
+            err_msg += str(err)
             return err_count, err_msg
 
     # Rename the target file to standard name.
-    log.write('Renaming ' + target_file_tmp + ' to ' + target_file, 'D')
-    log.write('mv ' + target_file_tmp + ' ' + target_file, 'N')
+    log.write('Renaming ' + str(target_file_tmp) + ' to ' + str(target_file), 'D')
+    log.write('mv ' + str(target_file_tmp) + ' ' + str(target_file), 'N')
     if not test:
-        os.rename(target_file_tmp, target_file)
-
+        target_file_tmp.rename(target_file)
 
     log.write(backup.name + ' : ' + backup.remote_file + ' successfully ' \
-        + 'backed up as ' + target_file, 'I')
+        + 'backed up as ' + str(target_file), 'I')
 
     log.write('with following dd statistics', 'D')
     for line in linestoprint:
@@ -603,11 +622,12 @@ def run_remote_backup(backup, log, test):
 
     # Create the target filename, full path. ._tmp -extension is used during the write
     timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S_')
-    target_file = backup.target_folder + '/' + timestamp + backup.target_file
-    target_file_tmp = backup.target_folder + '/' + timestamp + backup.target_file + '._tmp'
+    target_file = backup.target_folder.joinpath(Path(timestamp + backup.target_file_name))
+    target_file_tmp = backup.target_folder.joinpath(
+        Path(timestamp + backup.target_file_name + '._tmp'))
 
     # Construct the write part of overall dd-command.
-    writecmd = '/usr/bin/dd of=' + target_file_tmp + ' bs=64k'
+    writecmd = '/usr/bin/dd of=' + str(target_file_tmp) + ' bs=64k'
 
     log.write(backup.name + ' write command:', 'D')
     log.write(writecmd, 'D')
@@ -644,18 +664,17 @@ def run_remote_backup(backup, log, test):
         except OSError as err:
             err_count += 1
             err_msg += 'Something went wrong with the read and write processes'
-            print(err)
+            err_msg += str(err)
             return err_count, err_msg
 
     # Rename the target file to standard name.
-    log.write('Renaming ' + target_file_tmp + ' to ' + target_file, 'D')
-    log.write('mv ' + target_file_tmp + ' ' + target_file, 'N')
+    log.write('Renaming ' + str(target_file_tmp) + ' to ' + str(target_file), 'D')
+    log.write('mv ' + str(target_file_tmp) + ' ' + str(target_file), 'N')
     if not test:
-        os.rename(target_file_tmp, target_file)
-
+        target_file_tmp.rename(target_file)
 
     log.write(backup.name + ' : ' + backup.remote_file + ' successfully ' \
-        + 'backed up as ' + target_file, 'I')
+        + 'backed up as ' + str(target_file), 'I')
 
     log.write('with following dd statistics', 'D')
     for line in linestoprint:
@@ -675,12 +694,10 @@ def delete_old_versions(backup, log, test):
 
     log.write('Starting to delete old versions for ' + backup.name, 'D')
     backup_files = []
-    dir_contents = os.listdir(backup.target_folder)
     # loop through all items, discard folders and only keep file matching the backup filename
-    for item in dir_contents:
-        fullpath = backup.target_folder + '/' + item
-        if os.path.isfile(fullpath) and fullpath[-1*len(backup.target_file):] == backup.target_file:
-            backup_files.append(fullpath)
+    for item in backup.target_folder.iterdir():
+        if item.is_file() and item.match('*_'+backup.target_file_name):
+            backup_files.append(item)
 
     backup_files.sort(reverse=True)
 
@@ -688,17 +705,17 @@ def delete_old_versions(backup, log, test):
     files_to_delete = backup_files[backup.versions:]
 
     log.write('There are ' + str(len(files_to_delete)) + ' files to be deleted in ' \
-        + backup.target_folder, 'D')
+        + str(backup.target_folder), 'D')
 
     for file_to_delete in files_to_delete:
-        log.write('Removing file: ' + file_to_delete, 'D')
-        log.write('rm ' + file_to_delete, 'N')
+        log.write('Removing file: ' + str(file_to_delete), 'D')
+        log.write('rm ' + str(file_to_delete), 'N')
         if not test:
             try:
-                os.remove(file_to_delete)
+                file_to_delete.unlink()
             except PermissionError:
                 err_count += 1
-                err_msg += 'Can not remove file ' + file_to_delete + ' - Permission Error'
+                err_msg += 'Can not remove file ' + str(file_to_delete) + ' - Permission Error'
 
     return err_count, err_msg
 

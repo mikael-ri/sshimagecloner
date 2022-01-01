@@ -20,12 +20,6 @@ class ValidatorResult:
     def __bool__(self):
         return self.result
 
-# TODO remove all references to realpath from here. Check what Path.resolve does, but it is
-# better to check if path is absolute, and if not, then concatenate appropriate folder
-# here. And this needs to be done on the caller side, because the validator
-# cannot know which is the correct parent folder
-# Write instructions in the yaml config file.
-
 def backup_name(name):
     '''Validate backup name'''
     pat = re.compile(r'^[a-zA-Z0-9]{1}[-\w\.]{0,18}[-\w]$')
@@ -37,56 +31,90 @@ def backup_name(name):
 
 
 def file_read(file):
-    '''Check that file exists, is readable and returns absolute path'''
-    result = True
+    '''Check that file exists and is readable.
+
+    Arguments:
+    file -- Path object representing the file
+    '''
     value = file
     message = ''
-    if os.path.isfile(file):
+    if file.is_file():
         if os.access(file, os.R_OK):
-            value = os.path.realpath(file)
-            print('FIR ' + value)
+            result = True
         else:
-            message = 'File ' + file + ' cannot be read, no access'
+            message = 'File ' + str(file) + ' cannot be read, no access'
             result = False
     else:
-        message = 'File ' + file + ' does not exist'
+        message = 'File ' + str(file) + ' does not exist'
         result = False
 
     return ValidatorResult(result, value, message)
 
 def file_write(file):
-    '''Check that file exists, is readable and returns absolute path'''
-    result = True
+    '''Check that file exists and is writable.
+
+    Arguments:
+    file -- Path object represeting the file
+    '''
     value = file
     message = ''
-    if os.path.isfile(file):
+    if file.is_file():
         if os.access(file, os.W_OK):
-            value = os.path.realpath(file)
-            print('FIW ' + value)
+            result = True
         else:
-            message = 'File ' + file + ' cannot be read, no access'
+            message = 'File ' + str(file) + ' does not have write permission'
             result = False
     else:
-        message = 'File ' + file + ' does not exist'
+        message = 'File ' + str(file) + ' does not exist'
         result = False
 
     return ValidatorResult(result, value, message)
 
 def folder_write(folder):
-    '''Check that folder exists, is writable and returns absolute path'''
-    result = True
+    '''Check that folder exists and is writable
+
+    Arguments:
+    folder -- Path object representing the folder
+    '''
     value = folder
     message = ''
-    if os.path.isdir(folder):
+    if folder.is_dir():
         if os.access(folder, os.W_OK):
-            value = os.path.realpath(folder)
-            print('FOW ' + value)
+            result = True
         else:
-            message = 'Folder ' + folder + ' cannot be written into'
+            message = 'Folder ' + str(folder) + ' does not have write permission'
             result = False
     else:
-        message = 'Folder ' + folder + ' does not exist'
+        message = 'Folder ' + str(folder) + ' does not exist'
         result = False
+
+    return ValidatorResult(result, value, message)
+
+def log_file(file):
+    '''Check that either log file exists and is writable, or the folder for log file is writable
+
+    Arguments:
+    file -- Path object represeting the log file
+    '''
+    value = file
+    message = ''
+    if file.is_file():
+        if os.access(file, os.W_OK):
+            result = True
+        else:
+            message = 'File ' + str(file) + ' exists but does not have write permissions'
+            result = False
+    else:
+        log_dir = os.path.dirname(file)
+        if os.path.isdir(log_dir):
+            if os.access(log_dir, os.W_OK):
+                result = True
+            else:
+                message = 'Folder ' + str(log_dir) + ' does not have write permission'
+                result = False
+        else:
+            message = 'Folder ' + str(log_dir) + ' does not exist'
+            result = False
 
     return ValidatorResult(result, value, message)
 
@@ -107,7 +135,7 @@ def versions(vers):
     if vers > 0:
         result = True
 
-    msg = 'Version amount must be an integer number'
+    msg = 'Version amount must be a positive integer number'
 
     return ValidatorResult(result, vers, msg)
 
@@ -142,7 +170,7 @@ def target_file(name):
     '''Validate target_file name'''
     pat = re.compile(r'^[a-zA-Z0-9]{1}[-\w\.]{0,28}[-\w]$')
 
-    msg = 'Backup name max length is 30 char, it must start with alphanumeric character, ' \
+    msg = 'Target file name max length is 30 char, it must start with alphanumeric character, ' \
         'and can only contain a-z A-Z 0-9 . - _ and cannot end with .'
 
     return ValidatorResult(bool(pat.match(name)), name, msg)
