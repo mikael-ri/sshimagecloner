@@ -533,10 +533,7 @@ def run_local_backup(backup, log, test):
     log.write('Starting to process localhost ' + backup.name + ' : ' + backup.remote_file, 'I')
 
     # Construct the read command
-    #readcmd = '/usr/bin/sudo /usr/bin/dd if='+ backup.remote_file + ' bs=4M'
-
-    #TEMPORARY READCOMMAND FOR TESTING
-    readcmd = '/usr/bin/sudo /usr/bin/dd if='+ backup.remote_file + ' bs=4M count=10'
+    readcmd = '/usr/bin/sudo /usr/bin/dd if='+ backup.remote_file + ' bs=4M'
 
     log.write(backup.name + ' read command:', 'D')
     log.write(readcmd, 'D')
@@ -690,7 +687,7 @@ def run_remote_backup(backup, log, test):
 
 
 def delete_old_versions(backup, log, test):
-    '''Delete all older versions over versions count'''
+    '''Delete all older versions which exceed versions count'''
 
     err_count = 0
     err_msg = ''
@@ -698,9 +695,12 @@ def delete_old_versions(backup, log, test):
     log.write('Starting to delete old versions for ' + backup.name, 'D')
     backup_files = []
     # loop through all items, discard folders and only keep file matching the backup filename
-    for item in backup.target_folder.iterdir():
-        if item.is_file() and item.match('*_'+backup.target_file_name):
-            backup_files.append(item)
+    if test and not backup.target_folder.exists():
+        log.write('The target folder does not exist yet, deletion can not be tested.')
+    else:
+        for item in backup.target_folder.iterdir():
+            if item.is_file() and item.match('*_'+backup.target_file_name):
+                backup_files.append(item)
 
     backup_files.sort(reverse=True)
 
