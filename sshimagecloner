@@ -223,7 +223,7 @@ def parse_cmdline_arguments(arg):
 
     usage = 'Usage: sshimagecloner [-h | --help] [-t | --test] [-v] \n' \
         + '[-c | --conffile configfile] [-f | --folder folder] \n' \
-        + '[backupname_1] [backupname_2] [backupname...n]'
+        + '[configtest] [backupname_1] [backupname_2] [backupname...n]'
 
     err_count = 0
     err_msg = ''
@@ -282,7 +282,7 @@ def parse_cmdline_arguments(arg):
 
 def parse_config_file(path):
     '''Parse config file and return Configuration namedtuple object and backups -list'''
-    msg = ''
+    err_msg = ''
     err_count = 0
 
     yaml_conf = {}
@@ -301,12 +301,15 @@ def parse_config_file(path):
         general_config = yaml_conf['general']
     else:
         err_count += 1
-        msg += '[ERROR] general -section is missing from config file\n'
+        err_msg += '[ERROR] general -section is missing from config file\n'
 
     e_c, e_m, general_config = read_generalconfig_section(general_config)
 
     err_count += e_c
-    msg += e_m
+    err_msg += e_m
+
+    if err_count > 0:
+        return err_count, err_msg, general_config, None
 
     # THEN PARSE THE BACKUP DETAILS
     backup_config = {}
@@ -314,19 +317,19 @@ def parse_config_file(path):
         backup_config = yaml_conf['backups']
     else:
         err_count += 1
-        msg += '[ERROR] backups -section is missing from config file\n'
+        err_msg += '[ERROR] backups -section is missing from config file\n'
 
 
     if len(backup_config) == 0:
         err_count += 1
-        msg += '[ERROR] No backups specified in config file\n'
+        err_msg += '[ERROR] No backups specified in config file\n'
 
     e_c, e_m, all_backups = read_backupconfig_section(backup_config, general_config.root_folder)
 
     err_count += e_c
-    msg += e_m
+    err_msg += e_m
 
-    return err_count, msg, general_config, all_backups
+    return err_count, err_msg, general_config, all_backups
     # End of def parse_config_file(path)
 
 
@@ -335,7 +338,7 @@ def read_generalconfig_section(general_config):
 
     conf = ConfigFile()
     err_count = 0
-    msg = ''
+    err_msg = ''
 
     #Check through all the parameters needed.
     if 'log_file' in general_config:
@@ -348,7 +351,7 @@ def read_generalconfig_section(general_config):
             conf.log_file = log_file
         else:
             err_count += 1
-            msg += v_r.message + '\n'
+            err_msg += v_r.message + '\n'
 
     if 'log_level' in general_config:
         v_r = validator.log_level(general_config['log_level'])
@@ -356,7 +359,7 @@ def read_generalconfig_section(general_config):
             conf.log_level = general_config['log_level']
         else:
             err_count += 1
-            msg += v_r.message + '\n'
+            err_msg += v_r.message + '\n'
 
     if 'backup_root_folder' in general_config:
         backup_root = Path(general_config['backup_root_folder'])
@@ -367,12 +370,12 @@ def read_generalconfig_section(general_config):
             conf.root_folder = backup_root
         else:
             err_count += 1
-            msg += v_r.message + '\n'
+            err_msg += v_r.message + '\n'
     else:
         err_count += 1
-        msg += '[ERROR] Parameter backup_root_folder not set in config file\n'
+        err_msg += '[ERROR] Parameter backup_root_folder not set in config file\n'
 
-    return err_count, msg, conf
+    return err_count, err_msg, conf
 
     # End of read_generalconfig_section(general_config)
 
@@ -381,7 +384,7 @@ def read_backupconfig_section(backup_config, root_folder):
 
     all_backups = {}
     err_count = 0
-    msg = ''
+    err_msg = ''
 
     for key in backup_config:
         backup = Backup()
@@ -391,7 +394,7 @@ def read_backupconfig_section(backup_config, root_folder):
             pass
         else:
             err_count += 1
-            msg += v_r.message + '\n'
+            err_msg += v_r.message + '\n'
 
         backup.name = key
 
@@ -401,45 +404,45 @@ def read_backupconfig_section(backup_config, root_folder):
                 backup.remote_host = backup_config[key]['remote_host']
             else:
                 err_count += 1
-                msg += v_r.message + '\n'
+                err_msg += v_r.message + '\n'
         except KeyError:
             err_count += 1
-            msg += '[ERROR] remote_host not specified for backup: ' + key + '\n'
+            err_msg += '[ERROR] remote_host not specified for backup: ' + key + '\n'
         try:
             v_r = validator.remote_login(backup_config[key]['remote_login'])
             if v_r.result:
                 backup.remote_login = backup_config[key]['remote_login']
             else:
                 err_count += 1
-                msg += v_r.message + '\n'
+                err_msg += v_r.message + '\n'
         except KeyError:
             if backup.remote_host == 'localhost':
                 pass
             else:
                 err_count += 1
-                msg += '[ERROR] remote_login not specified for backup: ' + key + '\n'
+                err_msg += '[ERROR] remote_login not specified for backup: ' + key + '\n'
         try:
             backup.remote_file = backup_config[key]['remote_file']
         except KeyError:
             err_count += 1
-            msg += '[ERROR] remote_file not specified for backup: ' + key + '\n'
+            err_msg += '[ERROR] remote_file not specified for backup: ' + key + '\n'
         try:
             v_r = validator.target_file(backup_config[key]['target_file'])
             if v_r.result:
                 backup.target_file_name = backup_config[key]['target_file']
             else:
                 err_count += 1
-                msg += v_r.message + '\n'
+                err_msg += v_r.message + '\n'
         except KeyError:
             err_count += 1
-            msg += '[ERROR] target_file not specified for backup: ' + key + '\n'
+            err_msg += '[ERROR] target_file not specified for backup: ' + key + '\n'
         try:
             v_r = validator.versions(backup_config[key]['versions'])
             if v_r.result:
                 backup.versions = backup_config[key]['versions']
             else:
                 err_count += 1
-                msg += v_r.message + '\n'
+                err_msg += v_r.message + '\n'
         except KeyError:
             pass
 
@@ -449,7 +452,7 @@ def read_backupconfig_section(backup_config, root_folder):
         all_backups[backup.name] = backup
 
 
-    return err_count, msg, all_backups
+    return err_count, err_msg, all_backups
     # End of def read_backupconfig_section(backup_config)
 
 
