@@ -11,6 +11,8 @@ As there probably exists a lot of good and great tools to accomplish this, this 
 
 I'm using [rsnapshot](https://rsnapshot.org/) for file backup on the linux virtual machines and Raspberry Pi's, and I can warmly recommend that tool! Certain influences can be seen on the functionality of this tool as well.
 
+This application is written in python, and it uses linux native dd and gunzip to copy the disk and compress it.
+
 ## Installation
 
 ### Installing the "server"
@@ -20,6 +22,9 @@ wget https://raw.githubusercontent.com/mikael-ri/sshimagecloner/main/auto_instal
 chmod +x install_imagecloner.sh
 sudo ./install_imagecloner.sh
 ```
+The installation script assumes that the user then running the service will be a member of group "backupuser". If you have other group where the user running it belongs, replace the SSHIMAGECLONER_GROUP variable in the install script.
+
+!NB This user must exist before running the installation script.
 
 After installation, modify the `/etc/sshimagecloner/sshimagecloner.yaml` -file to match your needs and configuration.
 
@@ -29,9 +34,22 @@ Of course the application can be just clomed from the repo
 ```bash
 git clone https://github.com/mikael-ri/sshimagecloner
 ```
-and then just put either move the config-file to correct folder, give it as command line parameter or change the constant variable `CONFIG_FILE_NAME` to a new value where the script should look for the config file
+and then just put either move the config-file to correct folder, give it as command line parameter or change the constant variable `CONFIG_FILE_NAME` in sshimagecloner-script to a new value where the script should look for the config file
 
 ### Changes needed in the remote RaspberryPi's
+
+Reading of the disk / image with dd requires sudo rights on the remote machine. In case you don't want to allow root login to the remote machines, you can create a specific user to run the backups and give that user sudo right to dd without passwd.
+
+Running sshimagecloner itself does not require usage of sudo, but the dd command does require it.
+
+If you are using an user called "backupuser"  and the device that is read is "/dev/mmcblk0" (as it usually is with Raspberry Pi), then the following line can be added to the sudoers file. (Sudoers can be edited with command `sudo visudo`)
+```bash
+backupuser       ALL=NOPASSWD:   /usr/bin/dd if=/dev/mmcblk0 bs=64k
+```
+If you are also reading images from the localhost, you must do the same on localhost as well, but use bs=4M, as when sshimagecloner is reading an image from localhost it uses larger blocksize.
+```bash
+backupuser       ALL=NOPASSWD:   /usr/bin/dd if=/dev/mmcblk0 bs=4M
+```
 
 ## Usage
 
@@ -73,6 +91,32 @@ backupname_1 backupname_2 backupname...n
         config file.
 ```
 
-### Starting usage
+### Testing configuration
+
+After modifying the sshimagecloner.yaml configuration, the configuration can be tested with
+```bash
+sshimagecloner configtest
+```
+which will give feedback about the configuration file.
+
+Also doing a test run with
+```bash
+sshimagecloner -t
+```
+can be done, when the program writes all commands it will run on the output without doing any changes.
+
 
 ### Running as cron job
+
+An example of a cron job running every Monday morning 4:00 AM would be
+```bash
+0 4 * * 1   /usr/local/bin/sshimagecloner
+```
+
+### Examples of usage
+
+My intended usage is to do a backup once a week with above mentioned cron entry. Then after every major change, when I would like to have a fresh backup, I would manually run
+```bash
+sshimagecloner -f manual_backup RPi_1
+```
+which will create a backup of the RPi_1 configuration to a folder "backup_root"/manual_backup/RPi_1
