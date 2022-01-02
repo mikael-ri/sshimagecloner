@@ -39,13 +39,13 @@ sudo cp sshimagecloner/auto_install/sshimagecloner_example.yaml $SSHIMAGECLONER_
 
 # Copy the logrotate file
 printf "Creating the logrotate file\n"
-sudo echo "$SSHIMAGECLONER_LOG_FILE {" > $SSHIMAGECLONER_LOGROTATE_FILE
-sudo echo "    rotate 6" >> $SSHIMAGECLONER_LOGROTATE_FILE
-sudo echo "    monthly" >> $SSHIMAGECLONER_LOGROTATE_FILE
-sudo echo "    compress" >> $SSHIMAGECLONER_LOGROTATE_FILE
-sudo echo "    missingok" >> $SSHIMAGECLONER_LOGROTATE_FILE
-sudo echo "    create 0664 root $SSHIMAGECLONER_GROUP" >> $SSHIMAGECLONER_LOGROTATE_FILE
-sudo echo "}" >> $SSHIMAGECLONER_LOGROTATE_FILE
+echo "$SSHIMAGECLONER_LOG_FILE {" | sudo tee $SSHIMAGECLONER_LOGROTATE_FILE > /dev/null
+echo "    rotate 6" | sudo tee -a $SSHIMAGECLONER_LOGROTATE_FILE > /dev/null
+echo "    monthly" | sudo tee -a $SSHIMAGECLONER_LOGROTATE_FILE > /dev/null
+echo "    compress" | sudo tee -a $SSHIMAGECLONER_LOGROTATE_FILE > /dev/null
+echo "    missingok" | sudo tee -a $SSHIMAGECLONER_LOGROTATE_FILE > /dev/null
+echo "    create 0664 root $SSHIMAGECLONER_GROUP" | sudo tee -a $SSHIMAGECLONER_LOGROTATE_FILE > /dev/null
+echo "}" | sudo tee -a $SSHIMAGECLONER_LOGROTATE_FILE > /dev/null
 
 
 # Create the log file and change for proper access rights
