@@ -13,6 +13,7 @@ I'm using [rsnapshot](https://rsnapshot.org/) for file backup on the linux virtu
 
 ## Installation
 
+### Installing the "server"
 Easiest way to install the application is to download the `install_imagecloner.sh` -script, make it executable and run it
 ```bash
 wget https://raw.githubusercontent.com/mikael-ri/sshimagecloner/main/auto_install/install_imagecloner.sh
@@ -20,16 +21,21 @@ chmod +x install_imagecloner.sh
 sudo ./install_imagecloner.sh
 ```
 
+After installation, modify the `/etc/sshimagecloner/sshimagecloner.yaml` -file to match your needs and configuration.
+
 This script install pre-requisites, clones the repo, moves the files to right folders and then removes the clone
 
 Of course the application can be just clomed from the repo
 ```bash
 git clone https://github.com/mikael-ri/sshimagecloner
 ```
-and then just put either move the config-file to correct folder, give it as command line parameter or change the constant variable `CONFIG_FILE_NAME` to a new value where the script should look for the config file.
+and then just put either move the config-file to correct folder, give it as command line parameter or change the constant variable `CONFIG_FILE_NAME` to a new value where the script should look for the config file
+
+### Changes needed in the remote RaspberryPi's
 
 ## Usage
 
+### Options & arguments
 sshimagecloner has the following command line options and arguments
 ```
 OPTIONS:
@@ -52,6 +58,8 @@ OPTIONS:
         backup_root_folder set in the config file, it cannot be absolute path. If the folder is
         given as an argument, old versions are not deleted from this folder. This folder must
         exist, and when the backups are running, a subfolder is created for each backup.
+        This is mainly for the purpose, if there is a need to create specific manual
+        backups in addition to recurring ones
 
 ARGUMENTS:
 configtest
@@ -63,5 +71,8 @@ backupname_1 backupname_2 backupname...n
         specified, then also the old versions are deleted if the amount exceed the versions
         specified in the config file. These names must match to the backup names declared in the
         config file.
-
 ```
+
+### Starting usage
+
+### Running as cron job
