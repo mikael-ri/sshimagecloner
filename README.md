@@ -37,22 +37,31 @@ OPTIONS:
         Prints the usage -message for variables
 
 -t, --test
-        Does a "test run", i.e. prints out to stdout all commands that it would run but does not do any changes
+        Does a "test run", i.e. prints out to stdout all commands that it would run but does not
+        do any changes
 
 -v
-        Verbose mode, prints the same to stdout what is also printed in the log. Level of verbosity is defined with log_level in the config file
+        Verbose mode, prints the same to stdout what is also printed in the log. Level of verbosity
+        is defined with log_level in the config file
 
 -c, --conffile CONFIG_FILE
         Takes the config file as parameter and overruns the config file stated in the script
 
 -f, --folder FOLDER
-        Uses this folder for backups for this run. The folder must be relative to the backup_root_folder set in the config file, it cannot be absolute path. If the folder is given as an argument, old versions are not deleted from this folder. This folder must exist, and when the backups are running, a subfolder is created for each backup.
+        Uses this folder for backups for this run. The folder must be relative to the
+        backup_root_folder set in the config file, it cannot be absolute path. If the folder is
+        given as an argument, old versions are not deleted from this folder. This folder must
+        exist, and when the backups are running, a subfolder is created for each backup.
 
 ARGUMENTS:
 configtest
-        Tests the config file contents and passed arguments and then stops. Does not do any changes.
+        Tests the config file contents and passed arguments and then stops. Does not do any
+        changes.
 
 backupname_1 backupname_2 backupname...n
-        A list of backupnames can be provided, and only these are run. If the -f option is not specified, then also the old versions are deleted if the amount exceed the versions specified in the config file. These names must match to the backup names declared in the config file.
+        A list of backupnames can be provided, and only these are run. If the -f option is not
+        specified, then also the old versions are deleted if the amount exceed the versions
+        specified in the config file. These names must match to the backup names declared in the
+        config file.
 
 ```
