@@ -1,6 +1,0 @@
-/var/log/sshimagecloner.log {
-	rotate 6
-	monthly
-	compress
-	missingok
-}
