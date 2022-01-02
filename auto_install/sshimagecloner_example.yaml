@@ -38,18 +38,18 @@ backups:
   #   versions: number of versions to be stored of each image, default = 5
 
   RPi_1:
-    remote_login: backup_user
+    remote_login: backupuser
     remote_host: 10.0.0.1
     remote_file: /dev/mmcblk0
     target_file: RPi_1.img.gz
-    versions: 26
+    versions: 5
 
   RPi_2:
-    remote_login: backup_user
+    remote_login: backupuser
     remote_host: rpi2.mynetwork.local
     remote_file: /dev/mmcblk0
     target_file: RPi_2.img.gz
-    versions: 26
+    versions: 12
 
   RPi_23:
     remote_login: na

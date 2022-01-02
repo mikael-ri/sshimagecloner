@@ -4,12 +4,14 @@
 set -e
 
 # Set variables for the script
+SSHIMAGECLONER_GROUP="backupuser"
+
 SSHIMAGECLONER_TMP_DIR="/tmp/sshimageclonertmp"
 SSHIMAGECLONER_EXECUTABLE_FILE="/usr/local/bin/sshimagecloner"
 SSHIMAGECLONER_CONFIG_DIR="/etc/sshimagecloner"
 SSHIMAGECLONER_CONFIG_FILE="/etc/sshimagecloner/sshimagecloner.yaml"
 SSHIMAGECLONER_LOGROTATE_FILE="/etc/logrotate.d/sshimagecloner"
-
+SSHIMAGECLONER_LOG_FILE="/var/log/sshimagecloner.log"
 
 printf "Running apt update and installing python3, pip and git\n"
 sudo apt update
@@ -36,8 +38,20 @@ printf "Creating directory for configuration file\n"
 sudo cp sshimagecloner/auto_install/sshimagecloner_example.yaml $SSHIMAGECLONER_CONFIG_FILE
 
 # Copy the logrotate file
-printf "Installing the logrotate file\n"
-sudo cp sshimagecloner/auto_install/logrotate.d/sshimagecloner $SSHIMAGECLONER_LOGROTATE_FILE
+printf "Creating the logrotate file\n"
+sudo echo "$SSHIMAGECLONER_LOG_FILE {" > $SSHIMAGECLONER_LOGROTATE_FILE
+sudo echo "    rotate 6" >> $SSHIMAGECLONER_LOGROTATE_FILE
+sudo echo "    monthly" >> $SSHIMAGECLONER_LOGROTATE_FILE
+sudo echo "    compress" >> $SSHIMAGECLONER_LOGROTATE_FILE
+sudo echo "    missingok" >> $SSHIMAGECLONER_LOGROTATE_FILE
+sudo echo "    create 0664 root $SSHIMAGECLONER_GROUP" >> $SSHIMAGECLONER_LOGROTATE_FILE
+sudo echo "}" >> $SSHIMAGECLONER_LOGROTATE_FILE
+
+
+# Create the log file and change for proper access rights
+sudo touch $SSHIMAGECLONER_LOG_FILE
+sudo chmod 664 $SSHIMAGECLONER_LOG_FILE
+sudo chgrp $SSHIMAGECLONER_GROUP $SSHIMAGECLONER_LOG_FILE
 
 # Copy the dependent module to the module directory
 printf "Copying own modules to correct folder\n"
