@@ -12,6 +12,8 @@ general:
   
   # Log file. If commented out, then no log is written.
   # Log file path must be absolute or relative to the sshimagecloner script
+  # Usage of absolute path is recommended. However, the installer installs the
+  # sshimagecloner script in /usr/local/bin/
   log_file: /var/log/sshimagecloner.log
   
   # How much log is written
@@ -21,6 +23,8 @@ general:
   
   # Root folder where the backups are stored. All backups will be under this folder.
   # Root folder path must be absolute or relative to the sshimagecloner script
+  # Usage of absolute path is recommended. However, the installer installs the
+  # sshimagecloner script in /usr/local/bin/
   # NB! This folder must exist!
   backup_root_folder: /backups
   
